@@ -49,6 +49,14 @@ def _resolve_ephe_path():
 
 
 _EPHE_PATH, _EPHE_OK = _resolve_ephe_path()
+
+# Set the ephemeris path at import time — the moment this module loads in any
+# worker process — so it's in place before the first request, independent of
+# FastAPI startup-event timing.
+try:
+    swe.set_ephe_path(_EPHE_PATH)
+except Exception:  # pragma: no cover
+    pass
 SOURCE_URL = os.environ.get(
     "SWISSAPI_SOURCE_URL", "https://github.com/richardplrj/swiss-ephemeris-api"
 )
@@ -76,6 +84,23 @@ def init() -> None:
 
 def swe_version() -> str:
     return swe.version
+
+
+def ephemeris_selftest() -> dict:
+    """Actually exercise the ephemeris (Chiron needs seas_*.se1 + a correct
+    ephe path) so /health reports ground truth, not a file-existence guess."""
+    with _LOCK:
+        if not _initialized:
+            init()
+        swe.set_ephe_path(_EPHE_PATH)  # re-assert, belt-and-braces
+        try:
+            _xx, retflag = swe.calc_ut(2451545.0, swe.CHIRON, swe.FLG_SWIEPH)
+            using = "moshier" if retflag & swe.FLG_MOSEPH else "swiss"
+            return {"ephemeris": using, "asteroids_ok": using == "swiss",
+                    "detail": None}
+        except swe.Error as exc:
+            return {"ephemeris": "moshier-fallback", "asteroids_ok": False,
+                    "detail": str(exc)}
 
 
 # --------------------------------------------------------------------------- #

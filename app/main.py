@@ -235,11 +235,14 @@ def root():
 
 @app.get("/health", tags=["meta"], summary="Liveness probe")
 def health():
+    test = engine.ephemeris_selftest()
     return {"status": "ok", "swe_version": engine.swe_version(),
             "service": "swiss-ephemeris-open-api", "version": __version__,
-            "ephemeris": "swiss" if engine._EPHE_OK else "moshier-fallback",
+            "ephemeris": test["ephemeris"],
+            "asteroids_ok": test["asteroids_ok"],
             "ephe_path": engine._EPHE_PATH,
-            "ephe_files_loaded": engine._EPHE_OK}
+            "ephe_file_present": engine._EPHE_OK,
+            "selftest_detail": test["detail"]}
 
 
 @app.get("/license", tags=["meta"], summary="License & attribution")
