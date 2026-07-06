@@ -236,7 +236,10 @@ def root():
 @app.get("/health", tags=["meta"], summary="Liveness probe")
 def health():
     return {"status": "ok", "swe_version": engine.swe_version(),
-            "service": "swiss-ephemeris-open-api", "version": __version__}
+            "service": "swiss-ephemeris-open-api", "version": __version__,
+            "ephemeris": "swiss" if engine._EPHE_OK else "moshier-fallback",
+            "ephe_path": engine._EPHE_PATH,
+            "ephe_files_loaded": engine._EPHE_OK}
 
 
 @app.get("/license", tags=["meta"], summary="License & attribution")

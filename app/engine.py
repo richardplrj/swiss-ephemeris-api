@@ -26,10 +26,29 @@ from . import vedic
 # Module state                                                                #
 # --------------------------------------------------------------------------- #
 _LOCK = threading.RLock()
-_EPHE_PATH = os.environ.get(
-    "SWISSAPI_EPHE_PATH",
-    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ephe"),
-)
+
+
+def _resolve_ephe_path():
+    """Find the bundled .se1 folder robustly across deploy layouts (Docker,
+    Render native, local) by probing candidates for a known file. Returns
+    (path, files_present)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.environ.get("SWISSAPI_EPHE_PATH"),
+        os.path.join(os.path.dirname(here), "ephe"),   # <repo>/ephe (app/ sibling)
+        "/app/ephe",
+        os.path.join(os.getcwd(), "ephe"),
+        "ephe",
+    ]
+    for p in candidates:
+        if p and os.path.isfile(os.path.join(p, "sepl_18.se1")):
+            return p, True
+    # nothing found — return the best guess so paths are at least consistent
+    return (os.environ.get("SWISSAPI_EPHE_PATH")
+            or os.path.join(os.path.dirname(here), "ephe")), False
+
+
+_EPHE_PATH, _EPHE_OK = _resolve_ephe_path()
 SOURCE_URL = os.environ.get(
     "SWISSAPI_SOURCE_URL", "https://github.com/richardplrj/swiss-ephemeris-api"
 )
