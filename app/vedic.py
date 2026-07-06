@@ -173,8 +173,78 @@ def sunrise_elements(jd_ut, geolat, geolon, alt, atpress, attemp, jd_to_time):
         if sunset_after is not None:
             out["day_length_hours"] = round((sunset_after - prev_sunrise) * 24, 4)
         # Hindu day runs sunrise→sunrise, so the vara is that of prev_sunrise.
-        out["hindu_vara"] = weekday(prev_sunrise)
+        wd = weekday(prev_sunrise)
+        out["hindu_vara"] = wd
+        # Muhurta windows for the current sunrise→sunrise day.
+        if sunset_after is not None:
+            night_end = _next_event(sunset_after + 0.01, swe.SUN, hin_rise,
+                                    geopos, atpress, attemp)
+            out["muhurta"] = muhurta(prev_sunrise, sunset_after, night_end,
+                                     wd["index"], jd_to_time)
 
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# Muhurta / electional windows (derived from sunrise/sunset + weekday)        #
+# --------------------------------------------------------------------------- #
+def _segment(start, end, part_1based, n_parts, jd_to_time):
+    seg = (end - start) / n_parts
+    s = start + (part_1based - 1) * seg
+    return {"start": jd_to_time(s), "end": jd_to_time(s + seg)}
+
+
+def _choghadiya(start, end, weekday_idx, night, jd_to_time):
+    seg = (end - start) / 8.0
+    day_start = catalog.CHOGHADIYA_DAY_START[weekday_idx]
+    first = (day_start + 5) % 7 if night else day_start
+    out = []
+    for i in range(8):
+        name = catalog.CHOGHADIYA_ORDER[(first + i) % 7]
+        quality, lord = catalog.CHOGHADIYA[name]
+        s = start + i * seg
+        out.append({"name": name, "quality": quality, "lord": lord,
+                    "start": jd_to_time(s), "end": jd_to_time(s + seg)})
+    return out
+
+
+def _horas(day_sunrise, day_sunset, night_end, weekday_idx, jd_to_time):
+    """24 planetary hours: 12 across the day, 12 across the night."""
+    lord = catalog.WEEKDAY_LORD[weekday_idx]
+    start_idx = catalog.HORA_ORDER.index(lord)
+    day_seg = (day_sunset - day_sunrise) / 12.0
+    night_seg = (night_end - day_sunset) / 12.0
+    out = []
+    for n in range(24):
+        ruler = catalog.HORA_ORDER[(start_idx + n) % 7]
+        if n < 12:
+            s = day_sunrise + n * day_seg
+            e = s + day_seg
+        else:
+            s = day_sunset + (n - 12) * night_seg
+            e = s + night_seg
+        out.append({"hora": n + 1, "lord": ruler, "period": "day" if n < 12 else "night",
+                    "start": jd_to_time(s), "end": jd_to_time(e)})
+    return out
+
+
+def muhurta(day_sunrise, day_sunset, night_end, weekday_idx, jd_to_time):
+    mu = 48.0 / 1440.0  # one muhurta = 48 minutes, in days
+    out = {
+        "rahu_kaal": _segment(day_sunrise, day_sunset,
+                              catalog.RAHU_KAAL_PART[weekday_idx], 8, jd_to_time),
+        "yamaganda": _segment(day_sunrise, day_sunset,
+                             catalog.YAMAGANDA_PART[weekday_idx], 8, jd_to_time),
+        "gulika_kaal": _segment(day_sunrise, day_sunset,
+                              catalog.GULIKA_PART[weekday_idx], 8, jd_to_time),
+        "abhijit_muhurta": _segment(day_sunrise, day_sunset, 8, 15, jd_to_time),
+        "brahma_muhurta": {"start": jd_to_time(day_sunrise - 2 * mu),
+                           "end": jd_to_time(day_sunrise - mu)},
+        "choghadiya_day": _choghadiya(day_sunrise, day_sunset, weekday_idx, False, jd_to_time),
+    }
+    if night_end is not None:
+        out["choghadiya_night"] = _choghadiya(day_sunset, night_end, weekday_idx, True, jd_to_time)
+        out["hora"] = _horas(day_sunrise, day_sunset, night_end, weekday_idx, jd_to_time)
     return out
 
 

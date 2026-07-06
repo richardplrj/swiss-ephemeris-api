@@ -20,7 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
-from . import __version__, catalog, engine
+from . import __version__, catalog, engine, vedic
 
 # --------------------------------------------------------------------------- #
 # App                                                                          #
@@ -124,13 +124,38 @@ def _resolve_bodies(bodies: str | None):
         return catalog.DEFAULT_BODIES
     if bodies.lower() == "all":
         return catalog.ALL_BODIES
+    if bodies.lower() == "fictitious":
+        return catalog.FICTITIOUS_BODIES
     wanted = [b.strip().lower() for b in bodies.split(",") if b.strip()]
     known = {key: (key, ipl, name, cat) for key, ipl, name, cat in catalog.ALL_BODIES}
     unknown = [w for w in wanted if w not in known]
     if unknown:
         raise HTTPException(422, f"unknown bodies: {unknown}. "
-                                 f"Valid: {sorted(known)} or 'all'/'default'.")
+                                 f"Valid: {sorted(known)} or 'all'/'default'/'fictitious'.")
     return [known[w] for w in wanted]
+
+
+_VALID_FRAMES = set(engine._FRAME_FLAGS) | {"xyz"}
+
+
+def _resolve_frames(frames: str | None):
+    if not frames:
+        return None
+    if frames.lower() == "all":
+        return list(_VALID_FRAMES)
+    wanted = [f.strip().lower() for f in frames.split(",") if f.strip()]
+    unknown = [f for f in wanted if f not in _VALID_FRAMES]
+    if unknown:
+        raise HTTPException(422, f"unknown frames: {unknown}. "
+                                 f"Valid: {sorted(_VALID_FRAMES)} or 'all'.")
+    return wanted
+
+
+def _resolve_nodes(nodes: str | None):
+    n = (nodes or "mean").strip().lower()
+    if n not in ("mean", "osculating", "both"):
+        raise HTTPException(422, "nodes must be mean, osculating, or both")
+    return n
 
 
 def _resolve_include(include: str | None):
@@ -147,13 +172,21 @@ def _resolve_include(include: str | None):
 
 
 def _run(*, datetime_str, jd_ut, tz, lat, lon, alt, ayanamsha, house_system,
-         bodies, include, topocentric, atpress, attemp):
+         bodies, include, topocentric, atpress, attemp,
+         frames=None, stars=None, nodes="mean",
+         ayan_t0=0.0, ayan_value=0.0):
     jd_ut_val, jd_et, echo = _to_jd(datetime_str, tz, jd_ut)
 
-    try:
-        ayan_id, ayan_name = engine.resolve_ayanamsha(ayanamsha)
-    except ValueError as exc:
-        raise HTTPException(422, str(exc))
+    # Custom (user-defined) ayanamsha: ?ayanamsha=user with ayan_t0 + ayan_value.
+    sid_t0, sid_ayan_t0 = 0.0, 0.0
+    if str(ayanamsha).strip().lower() in ("user", "custom", "255"):
+        ayan_id, ayan_name = 255, "User-defined"
+        sid_t0, sid_ayan_t0 = ayan_t0 or 0.0, ayan_value or 0.0
+    else:
+        try:
+            ayan_id, ayan_name = engine.resolve_ayanamsha(ayanamsha)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
 
     hsys = (house_system or "P").strip()
     if len(hsys) != 1 or hsys not in catalog.HOUSE_SYSTEMS:
@@ -171,13 +204,17 @@ def _run(*, datetime_str, jd_ut, tz, lat, lon, alt, ayanamsha, house_system,
         "topocentric": topocentric,
     })
 
+    star_names = engine.resolve_star_names(stars) if stars else None
+
     try:
         result = engine.compute_chart(
             jd_ut=jd_ut_val, jd_et=jd_et, lat=lat, lon=lon, alt=alt or 0.0,
             ayanamsha_id=ayan_id, ayanamsha_name=ayan_name, hsys=hsys,
             body_defs=_resolve_bodies(bodies), include=_resolve_include(include),
-            topocentric=topocentric, atpress=atpress or 0.0, attemp=attemp or 0.0,
-            input_echo=echo)
+            topocentric=topocentric, frames=_resolve_frames(frames),
+            star_names=star_names, nodes_method=_resolve_nodes(nodes),
+            sid_t0=sid_t0, sid_ayan_t0=sid_ayan_t0,
+            atpress=atpress or 0.0, attemp=attemp or 0.0, input_echo=echo)
     except swe.Error as exc:
         # e.g. a date beyond the ~3000 BCE–3000 CE computable range
         raise HTTPException(422, f"cannot compute for these inputs: {exc}")
@@ -224,8 +261,13 @@ def meta():
         "ayanamsha_aliases": catalog.AYANAMSHA_ALIASES,
         "house_systems": engine.valid_house_systems(),
         "bodies": {"default": [b[0] for b in catalog.DEFAULT_BODIES],
-                   "all": [b[0] for b in catalog.ALL_BODIES]},
+                   "all": [b[0] for b in catalog.ALL_BODIES],
+                   "fictitious": [b[0] for b in catalog.FICTITIOUS_BODIES]},
         "include_sections": list(engine.HEAVY_SECTIONS),
+        "coordinate_frames": sorted(_VALID_FRAMES),
+        "node_methods": ["mean", "osculating", "both"],
+        "fixed_star_count": len(engine.all_star_names()),
+        "custom_ayanamsha": "ayanamsha=user with ayan_t0 (JD) + ayan_value (deg)",
         "notes": {
             "default_ayanamsha": "lahiri",
             "default_house_system": "P (Placidus)",
@@ -247,11 +289,19 @@ class ChartRequest(BaseModel):
     alt: float | None = Field(0.0, description="metres above sea level")
     ayanamsha: str = Field("lahiri", examples=["lahiri"])
     house_system: str = Field("P", description="single-char Swiss code", examples=["P"])
-    bodies: str | None = Field(None, description="CSV of body keys, or 'all'/'default'")
+    bodies: str | None = Field(None, description="CSV of body keys, or 'all'/'default'/'fictitious'")
     include: str | None = Field(
         None, description="CSV of heavy sections, or 'all': "
-        "eclipses,rise_transit,fixed_stars,nodes_apsides,orbital_elements")
+        "eclipses,rise_transit,fixed_stars,nodes_apsides,orbital_elements,"
+        "crossings,occultations,twilight,sky_position,all_house_systems,gauquelin")
     topocentric: bool = False
+    frames: str | None = Field(
+        None, description="extra coordinate frames per body, CSV or 'all': "
+        "heliocentric,barycentric,j2000,astrometric,true_geometric,xyz")
+    stars: str | None = Field(None, description="fixed stars: CSV of names, or 'all' (~800)")
+    nodes: str = Field("mean", description="node/apsis method: mean, osculating, or both")
+    ayan_t0: float | None = Field(0.0, description="reference JD for a custom (user) ayanamsha")
+    ayan_value: float | None = Field(0.0, description="ayanamsha degrees at ayan_t0 (with ayanamsha=user)")
     atpress: float | None = Field(0.0, description="atmospheric pressure (mbar) for rise/set")
     attemp: float | None = Field(0.0, description="atmospheric temperature (°C) for rise/set")
 
@@ -262,7 +312,9 @@ def chart_post(req: ChartRequest, response: Response):
         datetime_str=req.datetime, jd_ut=req.jd_ut, tz=req.tz,
         lat=req.lat, lon=req.lon, alt=req.alt, ayanamsha=req.ayanamsha,
         house_system=req.house_system, bodies=req.bodies, include=req.include,
-        topocentric=req.topocentric, atpress=req.atpress, attemp=req.attemp)
+        topocentric=req.topocentric, frames=req.frames, stars=req.stars,
+        nodes=req.nodes, ayan_t0=req.ayan_t0, ayan_value=req.ayan_value,
+        atpress=req.atpress, attemp=req.attemp)
     response.headers["Cache-Control"] = _CACHE
     return result
 
@@ -281,12 +333,80 @@ def chart_get(
     bodies: str | None = Query(None),
     include: str | None = Query(None),
     topocentric: bool = Query(False),
+    frames: str | None = Query(None),
+    stars: str | None = Query(None),
+    nodes: str = Query("mean"),
+    ayan_t0: float | None = Query(0.0),
+    ayan_value: float | None = Query(0.0),
     atpress: float | None = Query(0.0),
     attemp: float | None = Query(0.0),
 ):
     result = _run(
         datetime_str=datetime, jd_ut=jd_ut, tz=tz, lat=lat, lon=lon, alt=alt,
         ayanamsha=ayanamsha, house_system=house_system, bodies=bodies,
-        include=include, topocentric=topocentric, atpress=atpress, attemp=attemp)
+        include=include, topocentric=topocentric, frames=frames, stars=stars,
+        nodes=nodes, ayan_t0=ayan_t0, ayan_value=ayan_value,
+        atpress=atpress, attemp=attemp)
     response.headers["Cache-Control"] = _CACHE
     return result
+
+
+# --------------------------------------------------------------------------- #
+# Additional endpoints                                                         #
+# --------------------------------------------------------------------------- #
+@app.get("/v1/eclipses", tags=["events"],
+         summary="All eclipses in a date range (calendar)")
+def eclipses_range(
+    response: Response,
+    start: str | None = Query(None, description="ISO-8601 UTC start", examples=["2026-01-01T00:00:00Z"]),
+    end: str | None = Query(None, description="ISO-8601 UTC end", examples=["2027-01-01T00:00:00Z"]),
+    start_jd: float | None = Query(None),
+    end_jd: float | None = Query(None),
+    kind: str = Query("both", description="solar, lunar, or both"),
+):
+    s_jd, _e, _echo = _to_jd(start, None, start_jd)
+    e_jd, _e2, _echo2 = _to_jd(end, None, end_jd)
+    if kind not in ("solar", "lunar", "both"):
+        raise HTTPException(422, "kind must be solar, lunar, or both")
+    with engine._LOCK:
+        if not engine._initialized:
+            engine.init()
+        try:
+            data = engine.eclipse_range(s_jd, e_jd, kind)
+        except swe.Error as exc:
+            raise HTTPException(422, f"cannot compute: {exc}")
+    response.headers["Cache-Control"] = _CACHE
+    return {"start": engine.jd_to_time(s_jd), "end": engine.jd_to_time(e_jd),
+            "kind": kind, **data}
+
+
+@app.get("/v1/stars", tags=["chart"], summary="List all fixed-star names (~800)")
+def stars_list():
+    names = engine.all_star_names()
+    return {"count": len(names), "stars": names}
+
+
+@app.get("/v1/time", tags=["meta"], summary="Time conversions (JD, ΔT, sidereal time)")
+def time_convert(
+    datetime: str | None = Query(None, examples=["2026-07-06T14:30:00Z"]),
+    tz: str | None = Query(None),
+    jd_ut: float | None = Query(None),
+    lon: float | None = Query(None, description="for local sidereal time"),
+):
+    jd_ut_val, jd_et, echo = _to_jd(datetime, tz, jd_ut)
+    with engine._LOCK:
+        if not engine._initialized:
+            engine.init()
+        gst = swe.sidtime(jd_ut_val)
+        dt_days = swe.deltat(jd_ut_val)
+        out = {
+            "input": echo,
+            "jd_ut": jd_ut_val,
+            "jd_et": jd_et if jd_et is not None else jd_ut_val + dt_days,
+            "delta_t_seconds": round(dt_days * 86400.0, 6),
+            "greenwich_sidereal_time_hours": round(gst, 8),
+            "weekday": vedic.weekday(jd_ut_val),
+        }
+        if lon is not None:
+            out["local_sidereal_time_hours"] = round((gst + lon / 15.0) % 24, 8)
+    return out

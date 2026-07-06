@@ -165,8 +165,40 @@ def _equatorial(xx) -> dict:
     }
 
 
+_FRAME_FLAGS = {
+    "heliocentric": swe.FLG_HELCTR,
+    "barycentric": swe.FLG_BARYCTR,
+    "j2000": swe.FLG_J2000 | swe.FLG_NONUT,
+    "astrometric": swe.FLG_NOABERR | swe.FLG_NOGDEFL,
+    "true_geometric": swe.FLG_TRUEPOS,
+}
+
+
+def _frame_blocks(jd_ut, ipl, frames) -> dict:
+    """Alternate coordinate frames for one body (opt-in via ?frames=)."""
+    out = {}
+    for f in frames:
+        if f == "xyz":
+            xx, _ = _calc(jd_ut, ipl, _BASE | swe.FLG_XYZ)
+            if xx is not None:
+                out["xyz"] = {"x": round(xx[0], 10), "y": round(xx[1], 10),
+                              "z": round(xx[2], 10), "dx": round(xx[3], 12),
+                              "dy": round(xx[4], 12), "dz": round(xx[5], 12)}
+            continue
+        flag = _FRAME_FLAGS.get(f)
+        if flag is None:
+            continue
+        xx, _ = _calc(jd_ut, ipl, _BASE | flag)
+        if xx is not None:
+            out[f] = {"longitude": round(_norm360(xx[0]), 8),
+                      "latitude": round(xx[1], 8),
+                      "distance_au": round(xx[2], 10),
+                      "longitude_speed": round(xx[3], 8)}
+    return out
+
+
 def _body_object(jd_ut, key, ipl, name, category, want_pheno, want_topo,
-                 armc, geolat, eps):
+                 armc, geolat, eps, frames=None):
     trop_xx, trop_ret = _calc(jd_ut, ipl, _BASE)
     if trop_xx is None:
         return {"key": key, "id": ipl, "name": name, "category": category,
@@ -223,9 +255,15 @@ def _body_object(jd_ut, key, ipl, name, category, want_pheno, want_topo,
                 "elongation": round(attr[2], 6),
                 "apparent_diameter_arcsec": round(attr[3], 6),
                 "apparent_magnitude": round(attr[4], 4),
+                "horizontal_parallax": round(attr[5], 8),
             }
         except swe.Error:
             pass
+
+    if frames:
+        fb = _frame_blocks(jd_ut, ipl, frames)
+        if fb:
+            obj["frames"] = fb
 
     return obj
 
@@ -492,25 +530,37 @@ def fixed_stars(jd_ut, armc, geolat, eps, names=None) -> list[dict]:
     return out
 
 
-def nodes_apsides(jd_ut) -> dict:
+_NOD_METHODS = {"mean": swe.NODBIT_MEAN, "osculating": swe.NODBIT_OSCU}
+
+
+def _nod_block(quad):
+    asc, dsc, peri, aphe = quad
+    return {
+        "ascending_node": {"longitude": round(_norm360(asc[0]), 8),
+                           "latitude": round(asc[1], 8)},
+        "descending_node": {"longitude": round(_norm360(dsc[0]), 8),
+                            "latitude": round(dsc[1], 8)},
+        "perihelion": {"longitude": round(_norm360(peri[0]), 8),
+                       "distance_au": round(peri[2], 8)},
+        "aphelion": {"longitude": round(_norm360(aphe[0]), 8),
+                     "distance_au": round(aphe[2], 8)},
+    }
+
+
+def nodes_apsides(jd_ut, method="mean") -> dict:
+    """method: 'mean' | 'osculating' | 'both'."""
+    want = ["mean", "osculating"] if method == "both" else [method]
     out = {}
     for key in _RISE_BODIES:
         ipl = catalog.BODY_KEY_TO_CONST[key]
-        try:
-            asc, dsc, peri, aphe = swe.nod_aps_ut(
-                jd_ut, ipl, swe.NODBIT_MEAN, _BASE)
-            out[key] = {
-                "ascending_node": {"longitude": round(_norm360(asc[0]), 8),
-                                   "latitude": round(asc[1], 8)},
-                "descending_node": {"longitude": round(_norm360(dsc[0]), 8),
-                                    "latitude": round(dsc[1], 8)},
-                "perihelion": {"longitude": round(_norm360(peri[0]), 8),
-                               "distance_au": round(peri[2], 8)},
-                "aphelion": {"longitude": round(_norm360(aphe[0]), 8),
-                             "distance_au": round(aphe[2], 8)},
-            }
-        except swe.Error as exc:
-            out[key] = {"error": str(exc)}
+        entry = {}
+        for m in want:
+            try:
+                entry[m] = _nod_block(
+                    swe.nod_aps_ut(jd_ut, ipl, _NOD_METHODS[m], _BASE))
+            except swe.Error as exc:
+                entry[m] = {"error": str(exc)}
+        out[key] = entry[method] if method != "both" else entry
     return out
 
 
@@ -519,7 +569,7 @@ def orbital_elements(jd_et) -> dict:
     for key in _RISE_BODIES:
         ipl = catalog.BODY_KEY_TO_CONST[key]
         try:
-            e = swe.get_orbital_elements(jd_et, ipl, swe.FLG_SWIEPH)
+            e = swe.get_orbital_elements(jd_et, ipl, swe.FLG_SWIEPH | swe.FLG_HELCTR)
             out[key] = {
                 "semimajor_axis_au": round(e[0], 8),
                 "eccentricity": round(e[1], 8),
@@ -529,8 +579,13 @@ def orbital_elements(jd_et) -> dict:
                 "longitude_of_periapsis": round(e[5], 8),
                 "mean_anomaly": round(e[6], 8),
                 "true_anomaly": round(e[7], 8),
+                "eccentric_anomaly": round(e[8], 8),
+                "mean_longitude": round(e[9], 8),
                 "sidereal_period_years": round(e[10], 8),
                 "mean_daily_motion": round(e[11], 8),
+                "tropical_period_years": round(e[12], 8),
+                "synodic_period_days": round(e[13], 6),
+                "perihelion_passage_jd": round(e[14], 6),
                 "perihelion_distance_au": round(e[15], 8),
                 "aphelion_distance_au": round(e[16], 8),
             }
@@ -543,13 +598,17 @@ def orbital_elements(jd_et) -> dict:
 # Top-level orchestrator                                                       #
 # --------------------------------------------------------------------------- #
 HEAVY_SECTIONS = ("eclipses", "rise_transit", "fixed_stars",
-                  "nodes_apsides", "orbital_elements")
+                  "nodes_apsides", "orbital_elements", "crossings",
+                  "occultations", "twilight", "sky_position",
+                  "all_house_systems", "gauquelin")
 
 
 def compute_chart(*, jd_ut, jd_et=None, lat=None, lon=None, alt=0.0,
                   ayanamsha_id=1, ayanamsha_name="Lahiri",
                   hsys="P", body_defs=None, include=None,
                   topocentric=False, want_phenomena=True,
+                  frames=None, star_names=None, nodes_method="mean",
+                  sid_t0=0.0, sid_ayan_t0=0.0,
                   atpress=0.0, attemp=0.0, input_echo=None):
     """Assemble the full 'everything' chart. Serialized by _LOCK because every
     swisseph global (sid mode, topocentre, ephe path) is process-global."""
@@ -571,7 +630,7 @@ def compute_chart(*, jd_ut, jd_et=None, lat=None, lon=None, alt=0.0,
             swe.set_topo(lon, lat, alt or 0.0)
 
         # Requested sidereal mode drives every sidereal calc below.
-        swe.set_sid_mode(ayanamsha_id, 0, 0)
+        swe.set_sid_mode(ayanamsha_id, sid_t0, sid_ayan_t0)
 
         # ---- meta: obliquity, nutation, dt, sidereal time, eq. of time ---- #
         # Each guarded: a date beyond the ephemeris range must degrade to null,
@@ -642,7 +701,7 @@ def compute_chart(*, jd_ut, jd_et=None, lat=None, lon=None, alt=0.0,
         for key, ipl, name, category in body_defs:
             obj = _body_object(jd_ut, key, ipl, name, category,
                                want_phenomena, topocentric and has_place,
-                               armc, lat, eps_true)
+                               armc, lat, eps_true, frames=frames)
             # whole-sign house relative to the sidereal ascendant
             if asc_sid_sign is not None and obj.get("sidereal"):
                 bsign = obj["sidereal"]["sign"]["index"]
@@ -682,10 +741,11 @@ def compute_chart(*, jd_ut, jd_et=None, lat=None, lon=None, alt=0.0,
             "id": ayanamsha_id,
             "name": ayanamsha_name,
             "degrees": round(ayan_val, 8),
+            "true_and_mean": ayanamsha_true_mean(jd_ut),
             "all_modes": _ayanamsha_table(jd_ut),
         }
         # _ayanamsha_table() mutated the global sid mode; restore the request's.
-        swe.set_sid_mode(ayanamsha_id, 0, 0)
+        swe.set_sid_mode(ayanamsha_id, sid_t0, sid_ayan_t0)
 
         # ---- assemble ----------------------------------------------------- #
         result = {
@@ -711,11 +771,37 @@ def compute_chart(*, jd_ut, jd_et=None, lat=None, lon=None, alt=0.0,
         elif "rise_transit" in include:
             result["rise_transit"] = {"error": "lat/lon required"}
         if "fixed_stars" in include:
-            result["fixed_stars"] = fixed_stars(jd_ut, armc, lat, eps_true)
+            result["fixed_stars"] = fixed_stars(
+                jd_ut, armc, lat, eps_true, names=star_names)
         if "nodes_apsides" in include:
-            result["nodes_apsides"] = nodes_apsides(jd_ut)
+            result["nodes_apsides"] = nodes_apsides(jd_ut, method=nodes_method)
         if "orbital_elements" in include:
             result["orbital_elements"] = orbital_elements(jd_et)
+        if "crossings" in include:
+            result["crossings"] = crossings(jd_ut)
+        if "occultations" in include:
+            result["occultations"] = occultations(jd_ut, lat, lon, alt)
+        if "twilight" in include and has_place:
+            result["twilight"] = twilight(jd_ut, lat, lon, alt, atpress, attemp)
+        elif "twilight" in include:
+            result["twilight"] = {"error": "lat/lon required"}
+        if "sky_position" in include and has_place:
+            result["sky_position"] = sky_position(
+                jd_ut, lat, lon, alt, body_defs, atpress, attemp)
+        elif "sky_position" in include:
+            result["sky_position"] = {"error": "lat/lon required"}
+        if "all_house_systems" in include and has_place:
+            result["all_house_systems"] = {
+                "tropical": all_house_systems(jd_ut, lat, lon, sidereal=False),
+                "sidereal": all_house_systems(jd_ut, lat, lon, sidereal=True),
+            }
+        elif "all_house_systems" in include:
+            result["all_house_systems"] = {"error": "lat/lon required"}
+        if "gauquelin" in include and has_place:
+            result["gauquelin"] = gauquelin_sectors(
+                jd_ut, lat, lon, alt, body_defs, atpress, attemp)
+        elif "gauquelin" in include:
+            result["gauquelin"] = {"error": "lat/lon required"}
 
         return result
 
@@ -741,3 +827,220 @@ def valid_house_systems() -> dict:
             except swe.Error:
                 continue
     return out
+
+
+# --------------------------------------------------------------------------- #
+# Completeness layer (Swiss Ephemeris parity)                                  #
+# --------------------------------------------------------------------------- #
+def _rise_event(jd_ut, ipl, rsmi, geopos, atpress, attemp):
+    try:
+        res, tret = swe.rise_trans(jd_ut, ipl, rsmi, geopos,
+                                   atpress, attemp, swe.FLG_SWIEPH)
+        return tret[0] if (res == 0 and tret[0]) else None
+    except swe.Error:
+        return None
+
+
+def all_house_systems(jd_ut, geolat, geolon, sidereal=False) -> list:
+    """Cusps + Asc/MC for every supported house system in one shot."""
+    flags = swe.FLG_SIDEREAL if sidereal else 0
+    out = []
+    for code, name in catalog.HOUSE_SYSTEMS.items():
+        try:
+            cusps, ascmc = swe.houses_ex(jd_ut, geolat, geolon, code.encode(), flags)
+            out.append({
+                "code": code, "name": name,
+                "cusps": [round(_norm360(c), 6) for c in cusps],
+                "ascendant": round(_norm360(ascmc[0]), 6),
+                "mc": round(_norm360(ascmc[1]), 6),
+            })
+        except swe.Error:
+            continue
+    return out
+
+
+def gauquelin_sectors(jd_ut, geolat, geolon, alt, body_defs, atpress, attemp) -> dict:
+    geopos = (geolon, geolat, alt or 0.0)
+    out = {}
+    for key, ipl, _name, _cat in body_defs:
+        try:
+            out[key] = round(swe.gauquelin_sector(
+                jd_ut, ipl, 0, geopos, atpress, attemp, swe.FLG_SWIEPH), 6)
+        except swe.Error:
+            out[key] = None
+    return out
+
+
+@lru_cache(maxsize=1)
+def all_star_names() -> list:
+    names, path = [], os.path.join(_EPHE_PATH, "sefstars.txt")
+    try:
+        with open(path, encoding="latin-1") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                first = line.split(",")[0].strip()
+                if first:
+                    names.append(first)
+    except OSError:
+        pass
+    return names
+
+
+def resolve_star_names(param):
+    if not param or param.lower() == "default":
+        return catalog.DEFAULT_FIXED_STARS
+    if param.lower() == "all":
+        return all_star_names()
+    return [s.strip() for s in param.split(",") if s.strip()]
+
+
+def _ingress(jd_ut, ipl, sidereal, ayan):
+    """Next 30°-sign ingress of Sun/Moon (tropical or sidereal)."""
+    xx, _ = _calc(jd_ut, ipl, _BASE | (swe.FLG_SIDEREAL if sidereal else 0))
+    if xx is None:
+        return None
+    cur_sign = int(_norm360(xx[0]) // 30)
+    to_sign = (cur_sign + 1) % 12
+    target = (to_sign * 30) % 360
+    cross = swe.solcross_ut if ipl == swe.SUN else swe.mooncross_ut
+    try:
+        if sidereal:
+            t = cross(_norm360(target + ayan), jd_ut, swe.FLG_SWIEPH)
+            _r, ayan_t = swe.get_ayanamsa_ex_ut(t, swe.FLG_SWIEPH)  # refine
+            t = cross(_norm360(target + ayan_t), jd_ut, swe.FLG_SWIEPH)
+        else:
+            t = cross(target, jd_ut, swe.FLG_SWIEPH)
+    except swe.Error as exc:
+        return {"error": str(exc)}
+    return {"from_sign": catalog.SIGNS[cur_sign],
+            "to_sign": catalog.SIGNS[to_sign], "time": jd_to_time(t)}
+
+
+def crossings(jd_ut) -> dict:
+    """Exact sign-ingress (Sankranti / rasi change) + nodal crossing times."""
+    _r, ayan = swe.get_ayanamsa_ex_ut(jd_ut, swe.FLG_SWIEPH)
+    out = {}
+    for key, ipl in (("sun", swe.SUN), ("moon", swe.MOON)):
+        out[key] = {
+            "next_tropical_ingress": _ingress(jd_ut, ipl, False, ayan),
+            "next_sidereal_ingress": _ingress(jd_ut, ipl, True, ayan),
+        }
+    try:
+        t, lon, _lat = swe.mooncross_node_ut(jd_ut, swe.FLG_SWIEPH)
+        out["moon_node_crossing"] = {"time": jd_to_time(t),
+                                     "longitude": round(_norm360(lon), 6)}
+    except swe.Error as exc:
+        out["moon_node_crossing"] = {"error": str(exc)}
+    return out
+
+
+def eclipse_range(start_jd, end_jd, kind="both", max_events=200) -> dict:
+    out = {}
+    if kind in ("solar", "both"):
+        events, t = [], start_jd
+        while len(events) < max_events:
+            try:
+                ret, tret = swe.sol_eclipse_when_glob(t, swe.FLG_SWIEPH, 0, False)
+            except swe.Error:
+                break
+            if tret[0] > end_jd:
+                break
+            events.append({"type": _solar_eclipse_type(ret),
+                           "central": bool(ret & swe.ECL_CENTRAL),
+                           "maximum": jd_to_time(tret[0])})
+            t = tret[0] + 5
+        out["solar"] = events
+    if kind in ("lunar", "both"):
+        events, t = [], start_jd
+        while len(events) < max_events:
+            try:
+                ret, tret = swe.lun_eclipse_when(t, swe.FLG_SWIEPH, 0, False)
+            except swe.Error:
+                break
+            if tret[0] > end_jd:
+                break
+            events.append({"type": _lunar_eclipse_type(ret),
+                           "maximum": jd_to_time(tret[0])})
+            t = tret[0] + 5
+        out["lunar"] = events
+    return out
+
+
+def occultations(jd_ut, geolat, geolon, alt) -> dict:
+    """Next lunar occultations of planets & bright stars."""
+    targets = [("venus", swe.VENUS), ("mars", swe.MARS), ("jupiter", swe.JUPITER),
+               ("saturn", swe.SATURN), ("mercury", swe.MERCURY),
+               ("Aldebaran", "Aldebaran"), ("Regulus", "Regulus"),
+               ("Antares", "Antares"), ("Spica", "Spica")]
+    has_place = geolat is not None and geolon is not None
+    geopos = (geolon, geolat, alt or 0.0) if has_place else None
+    out = {}
+    for key, body in targets:
+        entry = {}
+        try:
+            _ret, tret = swe.lun_occult_when_glob(jd_ut, body, swe.FLG_SWIEPH, 0, False)
+            entry["next_global"] = jd_to_time(tret[0])
+        except swe.Error:
+            entry["next_global"] = None
+        if has_place:
+            try:
+                ret, tret, _attr = swe.lun_occult_when_loc(
+                    jd_ut, body, geopos, swe.FLG_SWIEPH, False)
+                entry["next_local"] = jd_to_time(tret[0])
+                entry["visible"] = bool(ret & swe.ECL_VISIBLE)
+            except swe.Error:
+                entry["next_local"] = None
+        out[key] = entry
+    return out
+
+
+def twilight(jd_ut, geolat, geolon, alt, atpress, attemp) -> dict:
+    geopos = (geolon, geolat, alt or 0.0)
+    kinds = {"civil": swe.BIT_CIVIL_TWILIGHT,
+             "nautical": swe.BIT_NAUTIC_TWILIGHT,
+             "astronomical": swe.BIT_ASTRO_TWILIGHT}
+    out = {}
+    for name, bit in kinds.items():
+        dawn = _rise_event(jd_ut, swe.SUN, swe.CALC_RISE | bit, geopos, atpress, attemp)
+        dusk = _rise_event(jd_ut, swe.SUN, swe.CALC_SET | bit, geopos, atpress, attemp)
+        out[name] = {"dawn": jd_to_time(dawn) if dawn else None,
+                     "dusk": jd_to_time(dusk) if dusk else None}
+    return out
+
+
+_COMPASS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+            "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
+
+
+def sky_position(jd_ut, geolat, geolon, alt, body_defs, atpress, attemp) -> dict:
+    """Azimuth/altitude (horizon coordinates) of each body. Azimuth is the
+    standard compass bearing (from due North, clockwise: E=90, S=180, W=270)."""
+    geopos = (geolon, geolat, alt or 0.0)
+    ap = atpress if atpress else 1013.25
+    at = attemp if attemp else 15.0
+    out = {}
+    for key, ipl, _name, _cat in body_defs:
+        xx, _ = _calc(jd_ut, ipl, _BASE)
+        if xx is None:
+            continue
+        try:
+            az_s, true_alt, app_alt = swe.azalt(
+                jd_ut, swe.ECL2HOR, geopos, ap, at, (xx[0], xx[1], xx[2]))
+            az = (az_s + 180.0) % 360.0   # Swiss (from-south) → compass (from-north)
+            out[key] = {"azimuth": round(az, 6),
+                        "compass": _COMPASS[int((az + 11.25) % 360 // 22.5)],
+                        "true_altitude": round(true_alt, 6),
+                        "apparent_altitude": round(app_alt, 6),
+                        "above_horizon": app_alt > 0}
+        except swe.Error:
+            out[key] = None
+    return out
+
+
+def ayanamsha_true_mean(jd_ut) -> dict:
+    _r1, true_v = swe.get_ayanamsa_ex_ut(jd_ut, swe.FLG_SWIEPH)
+    _r2, mean_v = swe.get_ayanamsa_ex_ut(jd_ut, swe.FLG_SWIEPH | swe.FLG_NONUT)
+    return {"with_nutation": round(true_v, 8),
+            "mean_without_nutation": round(mean_v, 8)}

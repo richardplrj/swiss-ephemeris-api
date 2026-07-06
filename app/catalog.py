@@ -58,8 +58,60 @@ EXTRA_BODIES: list[tuple[str, int, str, str]] = [
     ("interpolated_perigee", _INTP_PERG, "Interpolated Perigee", "point"),
 ]
 
-ALL_BODIES = DEFAULT_BODIES + EXTRA_BODIES
+# Uranian (Hamburg school) + fictitious/hypothetical bodies. All computed from
+# built-in orbital elements (40-54) or seorbel.txt (55-58) — NO .se1 data files.
+# Included only when the caller asks for bodies=all or bodies=fictitious.
+FICTITIOUS_BODIES: list[tuple[str, int, str, str]] = [
+    ("cupido", 40, "Cupido", "uranian"),
+    ("hades", 41, "Hades", "uranian"),
+    ("zeus", 42, "Zeus", "uranian"),
+    ("kronos", 43, "Kronos", "uranian"),
+    ("apollon", 44, "Apollon", "uranian"),
+    ("admetos", 45, "Admetos", "uranian"),
+    ("vulkanus", 46, "Vulkanus", "uranian"),
+    ("poseidon", 47, "Poseidon", "uranian"),
+    ("isis_transpluto", 48, "Isis-Transpluto", "fictitious"),
+    ("nibiru", 49, "Nibiru", "fictitious"),
+    ("harrington", 50, "Harrington", "fictitious"),
+    ("neptune_leverrier", 51, "Neptune (Leverrier)", "fictitious"),
+    ("neptune_adams", 52, "Neptune (Adams)", "fictitious"),
+    ("pluto_lowell", 53, "Pluto (Lowell)", "fictitious"),
+    ("pluto_pickering", 54, "Pluto (Pickering)", "fictitious"),
+    ("vulcan", 55, "Vulcan", "fictitious"),
+    ("white_moon", 56, "White Moon (Selena)", "fictitious"),
+    ("proserpina", 57, "Proserpina", "fictitious"),
+    ("waldemath", 58, "Waldemath (Dark Moon)", "fictitious"),
+]
+
+ALL_BODIES = DEFAULT_BODIES + EXTRA_BODIES + FICTITIOUS_BODIES
 BODY_KEY_TO_CONST = {key: const for key, const, _n, _c in ALL_BODIES}
+
+# --------------------------------------------------------------------------- #
+# Muhurta / Kaala tables (derived; used by vedic.py)                          #
+# --------------------------------------------------------------------------- #
+# Which of the 8 equal day-parts (1..8, sunrise→sunset) each falls in,
+# indexed by weekday 0=Sunday .. 6=Saturday.
+RAHU_KAAL_PART = [8, 2, 7, 5, 6, 4, 3]
+YAMAGANDA_PART = [5, 4, 3, 2, 1, 7, 6]
+GULIKA_PART = [7, 6, 5, 4, 3, 2, 1]
+
+# Choghadiya: 7 types with fixed quality. Day sequence starts at a weekday-set
+# offset and cycles in this fixed order; night sequence uses a +offset.
+CHOGHADIYA = {
+    "Udveg": ("bad", "Sun"), "Chal": ("neutral", "Venus"),
+    "Labh": ("good", "Mercury"), "Amrit": ("good", "Moon"),
+    "Kaal": ("bad", "Saturn"), "Shubh": ("good", "Jupiter"),
+    "Rog": ("bad", "Mars"),
+}
+# Fixed cyclic order of choghadiyas.
+CHOGHADIYA_ORDER = ["Udveg", "Chal", "Labh", "Amrit", "Kaal", "Shubh", "Rog"]
+# Index into CHOGHADIYA_ORDER of the FIRST day-choghadiya, by weekday 0=Sun..6=Sat.
+CHOGHADIYA_DAY_START = {0: 0, 1: 3, 2: 6, 3: 2, 4: 5, 5: 1, 6: 4}
+
+# Planetary-hours (Hora) ruler cycle (Chaldean order) and the day-lord that
+# rules the first hora after sunrise, by weekday 0=Sun..6=Sat.
+HORA_ORDER = ["Sun", "Venus", "Mercury", "Moon", "Saturn", "Jupiter", "Mars"]
+WEEKDAY_LORD = ["Sun", "Moon", "Mars", "Mercury", "Jupiter", "Venus", "Saturn"]
 
 # --------------------------------------------------------------------------- #
 # House systems (single-char swisseph codes)                                  #

@@ -74,10 +74,24 @@ curl -X POST http://localhost:8080/v1/chart -H 'content-type: application/json' 
 | `alt` | `0` | Metres above sea level (topocentric & rise/set). |
 | `ayanamsha` | `lahiri` | Sidereal mode: a slug (`lahiri`, `kp`, `raman`, `fagan_bradley`, …), a `SIDM_*` name, or an integer id. See `/v1/meta`. |
 | `house_system` | `P` | One-character Swiss code (`P` Placidus, `K` Koch, `W` Whole-sign, `B` Alcabitius, …). See `/v1/meta`. |
-| `bodies` | default set | CSV of body keys, or `all`, or `default`. |
-| `include` | *(none)* | CSV of heavy sections to add, or `all`: `eclipses,rise_transit,fixed_stars,nodes_apsides,orbital_elements`. |
+| `bodies` | default set | CSV of body keys, or `all` (43 incl. Uranian/fictitious), `default`, or `fictitious`. |
+| `include` | *(none)* | CSV of heavy sections, or `all`: `eclipses,rise_transit,fixed_stars,nodes_apsides,orbital_elements,crossings,occultations,twilight,sky_position,all_house_systems,gauquelin`. |
+| `frames` | *(none)* | Extra coordinate frames per body, CSV or `all`: `heliocentric,barycentric,j2000,astrometric,true_geometric,xyz`. |
+| `stars` | curated 17 | Fixed stars: CSV of names, or `all` (~770). |
+| `nodes` | `mean` | Node/apsis method: `mean`, `osculating`, or `both`. |
 | `topocentric` | `false` | Add a topocentric position pass per body. |
+| `ayanamsha=user` | — | With `ayan_t0` (JD) + `ayan_value` (deg): a fully custom ayanamsha. |
 | `atpress`, `attemp` | `0` | Atmospheric pressure (mbar) / temperature (°C) for rise/set refraction. |
+
+### More endpoints
+
+- `GET /v1/eclipses?start=…&end=…&kind=solar|lunar|both` — every eclipse in a date range (a calendar).
+- `GET /v1/stars` — the full ~770-name fixed-star catalog.
+- `GET /v1/time?datetime=…&lon=…` — Julian day, ΔT, sidereal time, weekday.
+
+### Vedic muhurta (auto, when lat/lon given)
+
+Every located chart's `vedic.sunrise_sunset.muhurta` block carries **Rahu Kaal, Yamaganda, Gulika, Abhijit, Brahma Muhurta**, the 8+8 **Choghadiya**, and the 24 planetary **Horas** — all anchored to the day's actual sunrise/sunset.
 
 Everything is **deterministic**, so responses are sent with `Cache-Control: immutable` — safe to cache forever.
 

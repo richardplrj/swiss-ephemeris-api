@@ -145,3 +145,82 @@ def test_out_of_all_range_degrades_gracefully():
     assert res["meta"]["equation_of_time_minutes"] is None
     assert "houses" in res                             # analytical, still valid
     assert len(res["houses"]["tropical"]) == 12
+
+
+# --------------------------------------------------------------------------- #
+# Completeness layer (Swiss Ephemeris parity additions)                        #
+# --------------------------------------------------------------------------- #
+def test_fictitious_bodies_compute():
+    _et, ut = _jd(2000, 1, 1, 12)
+    res = engine.compute_chart(jd_ut=ut, body_defs=catalog.FICTITIOUS_BODIES)
+    keys = {b["key"] for b in res["bodies"]}
+    for k in ("cupido", "poseidon", "vulcan", "white_moon", "waldemath"):
+        assert k in keys
+        b = next(x for x in res["bodies"] if x["key"] == k)
+        assert "error" not in b and b["tropical"]["longitude"] is not None
+
+
+def test_coordinate_frames():
+    _et, ut = _jd(2000, 1, 1, 12)
+    res = engine.compute_chart(jd_ut=ut, frames=["heliocentric", "xyz", "j2000"])
+    mars = next(b for b in res["bodies"] if b["key"] == "mars")
+    assert set(mars["frames"]) == {"heliocentric", "xyz", "j2000"}
+    assert "x" in mars["frames"]["xyz"]
+
+
+def test_crossings_karka_sankranti_2026():
+    # Sun enters sidereal Cancer (Karka Sankranti) mid-July.
+    _et, ut = _jd(2026, 7, 1)
+    res = engine.compute_chart(jd_ut=ut, include={"crossings"},
+                               ayanamsha_id=1, ayanamsha_name="Lahiri")
+    ing = res["crossings"]["sun"]["next_sidereal_ingress"]
+    assert ing["to_sign"] == "Cancer"
+    assert ing["time"]["calendar"]["month"] == 7
+    assert 14 <= ing["time"]["calendar"]["day"] <= 18
+
+
+def test_eclipse_range_2026():
+    s = engine.julian_day_utc(2026, 1, 1, 0, 0, 0)[1]
+    e = engine.julian_day_utc(2027, 1, 1, 0, 0, 0)[1]
+    er = engine.eclipse_range(s, e, "both")
+    assert len(er["solar"]) == 2 and len(er["lunar"]) == 2
+    types = {ev["type"] for ev in er["solar"]}
+    assert "annular" in types and "total" in types
+
+
+def test_muhurta_rahu_kaal_and_hora():
+    # 2026-07-07 is a Tuesday → first hora ruled by Mars, first choghadiya Rog.
+    _et, ut = _jd(2026, 7, 7, 6, 30)
+    res = engine.compute_chart(jd_ut=ut, lat=28.6139, lon=77.2090, alt=216)
+    m = res["vedic"]["sunrise_sunset"]["muhurta"]
+    assert m["hora"][0]["lord"] == "Mars"
+    assert m["choghadiya_day"][0]["name"] == "Rog"
+    # Rahu Kaal falls inside the daytime window
+    assert m["rahu_kaal"]["start"]["jd_ut"] < m["rahu_kaal"]["end"]["jd_ut"]
+
+
+def test_custom_ayanamsha():
+    # Define 24.000° at J2000 → by 2026 it should have drifted ~+0.37°.
+    _et, ut = _jd(2026, 1, 1)
+    res = engine.compute_chart(jd_ut=ut, ayanamsha_id=255, ayanamsha_name="User",
+                               sid_t0=2451545.0, sid_ayan_t0=24.0)
+    assert 24.3 < res["ayanamsha"]["degrees"] < 24.45
+
+
+def test_osculating_nodes_and_full_orbital():
+    _et, ut = _jd(2000, 1, 1, 12)
+    res = engine.compute_chart(jd_ut=ut, include={"nodes_apsides", "orbital_elements"},
+                               nodes_method="both")
+    assert set(res["nodes_apsides"]["mars"]) == {"mean", "osculating"}
+    assert len(res["orbital_elements"]["mars"]) == 17
+
+
+def test_full_star_catalog_and_all_house_systems():
+    assert len(engine.all_star_names()) > 700
+    _et, ut = _jd(2000, 1, 1, 12)
+    res = engine.compute_chart(jd_ut=ut, lat=28.6, lon=77.2,
+                               include={"all_house_systems", "sky_position"})
+    assert len(res["all_house_systems"]["tropical"]) >= 20
+    # Sun near local midnight/day — altitude bounded, azimuth is a compass bearing
+    sun = res["sky_position"]["sun"]
+    assert -90 <= sun["true_altitude"] <= 90 and 0 <= sun["azimuth"] < 360
