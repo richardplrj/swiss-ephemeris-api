@@ -1,0 +1,14 @@
+# Render Blueprint — lets Render configure the whole service automatically.
+# In Render: New → Blueprint → pick this repo → Apply. That's it.
+services:
+  - type: web
+    name: swiss-ephemeris-api
+    runtime: docker
+    plan: free
+    region: singapore          # closest free region to India
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true           # redeploy automatically on every git push
+    envVars:
+      - key: SWISSAPI_SOURCE_URL
+        value: https://github.com/richardplrj/swiss-ephemeris-api
