@@ -224,3 +224,70 @@ def test_full_star_catalog_and_all_house_systems():
     # Sun near local midnight/day — altitude bounded, azimuth is a compass bearing
     sun = res["sky_position"]["sun"]
     assert -90 <= sun["true_altitude"] <= 90 and 0 <= sun["azimuth"] < 360
+
+
+# --------------------------------------------------------------------------- #
+# Jyotisha interpretation layer                                                #
+# --------------------------------------------------------------------------- #
+from app import jyotisha
+
+
+def test_ashtakavarga_checksum():
+    pos = {"sun": {"lon": 10}, "moon": {"lon": 40}, "mars": {"lon": 70},
+           "mercury": {"lon": 100}, "jupiter": {"lon": 130},
+           "venus": {"lon": 160}, "saturn": {"lon": 190}}
+    av = jyotisha.ashtakavarga(pos, asc_lon=220)
+    for p, expected in jyotisha._BAV_TOTALS.items():
+        assert av["bhinnashtakavarga"][p]["total"] == expected, p
+    assert av["sarvashtakavarga"]["total"] == 337  # the invariant checksum
+
+
+def test_dignity():
+    assert jyotisha.dignity("sun", 10)["status"] == "exalted"        # Aries 10
+    assert jyotisha.dignity("sun", 190)["status"] == "debilitated"   # Libra 10
+    assert jyotisha.dignity("saturn", 200)["status"] == "exalted"    # Libra 20
+    assert jyotisha.dignity("jupiter", 275)["status"] == "debilitated"
+    assert jyotisha.dignity("sun", 125)["status"] == "moolatrikona"  # Leo 5
+
+
+def test_combustion_retrograde_orbs():
+    assert jyotisha.combustion("mercury", 100, 108, False)["combust"] is True   # 8°, orb 14
+    assert jyotisha.combustion("mercury", 100, 113, True)["combust"] is False   # 13°, orb 12
+    assert jyotisha.combustion("saturn", 100, 120, False)["combust"] is False   # 20°, orb 15
+
+
+def test_divisional_d9_matches_navamsa():
+    for lon in (15.0, 47.3, 123.4, 200.7, 358.9):
+        d9 = jyotisha.SIGNS[jyotisha._varga_sign(lon, 9)]
+        assert d9 == vedic.navamsa_sign(lon)["name"]
+        assert jyotisha.SIGNS[jyotisha._varga_sign(lon, 1)] == \
+            vedic.rasi(lon)["name"]
+
+
+def test_vimshottari_balance():
+    _et, ut = _jd(1990, 8, 15)
+    # Moon at 0° = start of Ashwini (Ketu, 7 yrs); balance = 7.0
+    d = jyotisha.vimshottari(ut, 0.0, engine.jd_to_time)
+    assert d["starting_lord"] == "Ketu"
+    assert abs(d["balance_at_birth_years"] - 7.0) < 1e-6
+    assert [m["lord"] for m in d["maha_dashas"]][:3] == ["Ketu", "Venus", "Sun"]
+    # mid-Ashwini → half balance
+    d2 = jyotisha.vimshottari(ut, (360 / 27) / 2, engine.jd_to_time)
+    assert abs(d2["balance_at_birth_years"] - 3.5) < 1e-6
+
+
+def test_jyotisha_sections_in_chart():
+    _et, ut = _jd(1990, 8, 15, 0, 15)
+    res = engine.compute_chart(
+        jd_ut=ut, lat=28.6139, lon=77.2090, alt=216,
+        ayanamsha_id=1, ayanamsha_name="Lahiri",
+        include={"dasha", "divisional_charts", "ashtakavarga", "aspects"})
+    assert res["ashtakavarga"]["sarvashtakavarga"]["total"] == 337
+    assert res["dasha"]["current"].get("maha")
+    assert "D9" in res["divisional_charts"]["bodies"]["moon"]
+    assert "graha_drishti" in res["aspects"]
+    # dignity + combustion attached to the Sun/planets
+    sun = next(b for b in res["bodies"] if b["key"] == "sun")
+    assert "dignity" in sun["sidereal"]
+    venus = next(b for b in res["bodies"] if b["key"] == "venus")
+    assert "combustion" in venus["sidereal"]

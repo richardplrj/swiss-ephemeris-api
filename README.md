@@ -89,6 +89,17 @@ curl -X POST http://localhost:8080/v1/chart -H 'content-type: application/json' 
 - `GET /v1/stars` — the full ~770-name fixed-star catalog.
 - `GET /v1/time?datetime=…&lon=…` — Julian day, ΔT, sidereal time, weekday.
 
+### Jyotisha interpretation layer (v1.2)
+
+- **Dignity + combustion** are attached to each classical planet's `sidereal` block automatically (exalted/debilitated/moolatrikona/own/friendly/enemy; combust with retrograde-aware orbs).
+- Opt-in via `include=`:
+  - `dasha` — **Vimshottari** Maha + Antar timeline (365.25-day year), with the running period.
+  - `divisional_charts` — all **16 vargas** D1–D60 (BPHS conventions, each labeled) per body + Ascendant.
+  - `ashtakavarga` — **Bhinna + Sarva** bindu tables (Sarva always totals 337 — a built-in checksum).
+  - `aspects` — **Graha Drishti** (whole-sign, with Mars/Jupiter/Saturn special aspects) + Graha Yuddha.
+
+Every convention with competing traditions is stated in the response and in `app/jyotisha.py`.
+
 ### Vedic muhurta (auto, when lat/lon given)
 
 Every located chart's `vedic.sunrise_sunset.muhurta` block carries **Rahu Kaal, Yamaganda, Gulika, Abhijit, Brahma Muhurta**, the 8+8 **Choghadiya**, and the 24 planetary **Horas** — all anchored to the day's actual sunrise/sunset.

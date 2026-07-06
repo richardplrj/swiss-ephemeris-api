@@ -299,7 +299,8 @@ class ChartRequest(BaseModel):
     include: str | None = Field(
         None, description="CSV of heavy sections, or 'all': "
         "eclipses,rise_transit,fixed_stars,nodes_apsides,orbital_elements,"
-        "crossings,occultations,twilight,sky_position,all_house_systems,gauquelin")
+        "crossings,occultations,twilight,sky_position,all_house_systems,gauquelin,"
+        "dasha,divisional_charts,ashtakavarga,aspects")
     topocentric: bool = False
     frames: str | None = Field(
         None, description="extra coordinate frames per body, CSV or 'all': "
