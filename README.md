@@ -97,8 +97,22 @@ curl -X POST http://localhost:8080/v1/chart -H 'content-type: application/json' 
   - `divisional_charts` — all **16 vargas** D1–D60 (BPHS conventions, each labeled) per body + Ascendant.
   - `ashtakavarga` — **Bhinna + Sarva** bindu tables (Sarva always totals 337 — a built-in checksum).
   - `aspects` — **Graha Drishti** (whole-sign, with Mars/Jupiter/Saturn special aspects) + Graha Yuddha.
+  - `yogini_dasha` — **Yogini** dasha (36-year, 8 yoginis).
+  - `yogas` — named yogas (Gajakesari, Budhaditya, Chandra-Mangala, the 5 **Pancha Mahapurusha**, Kala Sarpa, Kemadruma) — presence detection with the rule stated.
+
+The Vimshottari `dasha` block also gives the running **Maha → Antar → Pratyantar** (3 levels).
 
 Every convention with competing traditions is stated in the response and in `app/jyotisha.py`.
+
+### Marriage compatibility — `GET|POST /v1/matching`
+
+**Ashtakoot / Guna Milan** (36-point) from two birth times:
+
+```bash
+curl "http://localhost:8080/v1/matching?boy_datetime=1990-08-15T05:45:00&boy_tz=Asia/Kolkata&girl_datetime=1992-11-03T22:10:00&girl_tz=Asia/Kolkata"
+```
+
+Returns all 8 kootas (Varna, Vashya, Tara, Yoni, Graha Maitri, Gana, Bhakoot, Nadi), the total /36, and a verdict. The yoni matrix, gana and nadi tables are the classical ones; the convention-variant kootas are labeled.
 
 ### Vedic muhurta (auto, when lat/lon given)
 

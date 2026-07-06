@@ -20,7 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
-from . import __version__, catalog, engine, vedic
+from . import __version__, catalog, engine, vedic, matching
 
 # --------------------------------------------------------------------------- #
 # App                                                                          #
@@ -385,6 +385,57 @@ def eclipses_range(
     response.headers["Cache-Control"] = _CACHE
     return {"start": engine.jd_to_time(s_jd), "end": engine.jd_to_time(e_jd),
             "kind": kind, **data}
+
+
+class MatchRequest(BaseModel):
+    boy_datetime: str = Field(..., examples=["1990-08-15T05:45:00"])
+    boy_tz: str | None = Field("UTC", examples=["Asia/Kolkata"])
+    girl_datetime: str = Field(..., examples=["1992-11-03T22:10:00"])
+    girl_tz: str | None = Field("UTC", examples=["Asia/Kolkata"])
+    ayanamsha: str = Field("lahiri")
+
+
+def _moon_lon(dt_str, tz, ayan_id):
+    jd_ut, _e, _echo = _to_jd(dt_str, tz, None)
+    return engine.moon_sidereal_longitude(jd_ut, ayan_id)
+
+
+@app.post("/v1/matching", tags=["events"],
+          summary="Ashtakoot / Guna Milan (36-point marriage compatibility)")
+def matching_post(req: MatchRequest, response: Response):
+    try:
+        ayan_id, _n = engine.resolve_ayanamsha(req.ayanamsha)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    try:
+        boy = _moon_lon(req.boy_datetime, req.boy_tz, ayan_id)
+        girl = _moon_lon(req.girl_datetime, req.girl_tz, ayan_id)
+    except swe.Error as exc:
+        raise HTTPException(422, f"cannot compute: {exc}")
+    response.headers["Cache-Control"] = _CACHE
+    return matching.ashtakoot(boy, girl)
+
+
+@app.get("/v1/matching", tags=["events"], summary="Ashtakoot (query params)")
+def matching_get(
+    response: Response,
+    boy_datetime: str = Query(..., examples=["1990-08-15T05:45:00"]),
+    girl_datetime: str = Query(..., examples=["1992-11-03T22:10:00"]),
+    boy_tz: str | None = Query("UTC"),
+    girl_tz: str | None = Query("UTC"),
+    ayanamsha: str = Query("lahiri"),
+):
+    try:
+        ayan_id, _n = engine.resolve_ayanamsha(ayanamsha)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    try:
+        boy = _moon_lon(boy_datetime, boy_tz, ayan_id)
+        girl = _moon_lon(girl_datetime, girl_tz, ayan_id)
+    except swe.Error as exc:
+        raise HTTPException(422, f"cannot compute: {exc}")
+    response.headers["Cache-Control"] = _CACHE
+    return matching.ashtakoot(boy, girl)
 
 
 @app.get("/v1/stars", tags=["chart"], summary="List all fixed-star names (~800)")

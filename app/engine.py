@@ -646,7 +646,8 @@ HEAVY_SECTIONS = ("eclipses", "rise_transit", "fixed_stars",
                   "nodes_apsides", "orbital_elements", "crossings",
                   "occultations", "twilight", "sky_position",
                   "all_house_systems", "gauquelin",
-                  "dasha", "divisional_charts", "ashtakavarga", "aspects")
+                  "dasha", "divisional_charts", "ashtakavarga", "aspects",
+                  "yogini_dasha", "yogas")
 
 
 def compute_chart(*, jd_ut, jd_et=None, lat=None, lon=None, alt=0.0,
@@ -883,6 +884,16 @@ def compute_chart(*, jd_ut, jd_et=None, lat=None, lon=None, alt=0.0,
             mo = by_key.get("moon", {}).get("sidereal")
             result["dasha"] = (jyotisha.vimshottari(jd_ut, mo["longitude"], jd_to_time)
                                if mo else {"error": "moon position unavailable"})
+        if "yogini_dasha" in include:
+            mo = by_key.get("moon", {}).get("sidereal")
+            result["yogini_dasha"] = (jyotisha.yogini_dasha(jd_ut, mo["longitude"], jd_to_time)
+                                      if mo else {"error": "moon position unavailable"})
+        if "yogas" in include:
+            yp = dict(sid7)
+            rahu = by_key.get("true_node", {}).get("sidereal")
+            if rahu:
+                yp["rahu"] = {"lon": rahu["longitude"]}
+            result["yogas"] = jyotisha.yogas(yp, asc_sid_lon)
         if "divisional_charts" in include:
             all_sid = {b["key"]: {"lon": b["sidereal"]["longitude"]}
                        for b in bodies if b.get("sidereal")}
@@ -905,6 +916,16 @@ def julian_day_utc(year, month, day, hour, minute, second):
         if not _initialized:
             init()
         return swe.utc_to_jd(year, month, day, hour, minute, second, swe.GREG_CAL)
+
+
+def moon_sidereal_longitude(jd_ut, ayanamsha_id=1):
+    """Just the Moon's sidereal longitude — for the two-person matching route."""
+    with _LOCK:
+        if not _initialized:
+            init()
+        swe.set_sid_mode(ayanamsha_id, 0, 0)
+        xx, _ = swe.calc_ut(jd_ut, swe.MOON, _BASE | swe.FLG_SIDEREAL)
+        return _norm360(xx[0])
 
 
 def valid_house_systems() -> dict:

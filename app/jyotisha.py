@@ -166,6 +166,20 @@ _DASHA_ORDER = ["ketu", "venus", "sun", "moon", "mars", "rahu",
 _YEAR_DAYS = 365.25
 
 
+def _subperiods(start_jd, end_jd, start_lord):
+    """Split a dasha period into its 9 proportional sub-periods (antar within
+    maha, pratyantar within antar, …), starting from `start_lord`."""
+    total = end_jd - start_jd
+    li = _DASHA_ORDER.index(start_lord)
+    out, t = [], start_jd
+    for j in range(9):
+        L = _DASHA_ORDER[(li + j) % 9]
+        dur = total * _DASHA_YEARS[L] / 120.0
+        out.append((L, t, t + dur))
+        t += dur
+    return out
+
+
 def vimshottari(jd_birth, moon_sid_lon, jd_to_time):
     nak = int(_norm360(moon_sid_lon) // _SPAN)
     lord = catalog.NAKSHATRA_LORDS[nak].lower()
@@ -191,7 +205,13 @@ def vimshottari(jd_birth, moon_sid_lon, jd_to_time):
                                "start": jd_to_time(max(acur, jd_birth)),
                                "end": jd_to_time(a_end)})
                 if acur <= jd_birth < a_end and m_start <= jd_birth < m_end:
-                    current = {"maha": L.capitalize(), "antar": AL.capitalize()}
+                    cur = {"maha": L.capitalize(), "antar": AL.capitalize()}
+                    for PL, ps, pe in _subperiods(acur, a_end, AL):  # pratyantar
+                        if ps <= jd_birth < pe:
+                            cur["pratyantar"] = PL.capitalize()
+                            cur["pratyantar_ends"] = jd_to_time(pe)
+                            break
+                    current = cur
             acur = a_end
         out_mahas.append({
             "lord": L.capitalize(),
@@ -345,3 +365,95 @@ def ashtakavarga(positions, asc_lon):
         "sarvashtakavarga": {"by_sign": {SIGNS[i]: sarva[i] for i in range(12)},
                              "total": sum(sarva)},
     }
+
+
+# --------------------------------------------------------------------------- #
+# Yogini Dasha (36-year cycle, 8 yoginis)                                      #
+# --------------------------------------------------------------------------- #
+# (name, lord, years). Starting yogini = ((nakshatra_number + 3) mod 8); 0→8.
+_YOGINI = [("Mangala", "Moon", 1), ("Pingala", "Sun", 2), ("Dhanya", "Jupiter", 3),
+           ("Bhramari", "Mars", 4), ("Bhadrika", "Mercury", 5), ("Ulka", "Saturn", 6),
+           ("Siddha", "Venus", 7), ("Sankata", "Rahu", 8)]
+
+
+def yogini_dasha(jd_birth, moon_sid_lon, jd_to_time):
+    nak = int(_norm360(moon_sid_lon) // _SPAN)
+    rem = (nak + 1 + 3) % 8
+    start_idx = 7 if rem == 0 else rem - 1
+    frac = (_norm360(moon_sid_lon) % _SPAN) / _SPAN
+    start_years = _YOGINI[start_idx][2]
+    cursor = jd_birth - frac * start_years * _YEAR_DAYS
+    mahas = []
+    for k in range(8):
+        name, lord, yrs = _YOGINI[(start_idx + k) % 8]
+        m_start, m_end = cursor, cursor + yrs * _YEAR_DAYS
+        cursor = m_end
+        mahas.append({"yogini": name, "lord": lord,
+                      "start": jd_to_time(max(m_start, jd_birth)),
+                      "end": jd_to_time(m_end),
+                      "years": round((m_end - max(m_start, jd_birth)) / _YEAR_DAYS, 4)})
+    return {"system": "Yogini", "convention": "start = (nakshatra_no + 3) mod 8",
+            "cycle_years": 36, "moon_nakshatra": catalog.NAKSHATRAS[nak],
+            "starting_yogini": _YOGINI[start_idx][0],
+            "balance_at_birth_years": round(start_years * (1 - frac), 4),
+            "maha_dashas": mahas}
+
+
+# --------------------------------------------------------------------------- #
+# Named yogas (presence detection with the classical rule; not interpretation) #
+# --------------------------------------------------------------------------- #
+_MAHAPURUSHA = {"mars": "Ruchaka", "mercury": "Bhadra", "jupiter": "Hamsa",
+                "venus": "Malavya", "saturn": "Sasa"}
+
+
+def yogas(positions, asc_lon):
+    """Detect a curated set of well-defined yogas. Each entry names the rule.
+    positions: {planet: {"lon": sidereal_lon}} incl. rahu."""
+    sign = {k: _sign_of(v["lon"]) for k, v in positions.items()}
+    found = []
+
+    def kendra(a, b):  # b in a kendra (1/4/7/10) from a?
+        return (a - b) % 3 == 0
+
+    moon_s = sign.get("moon")
+    asc_s = _sign_of(asc_lon) if asc_lon is not None else None
+
+    if "jupiter" in sign and moon_s is not None and (sign["jupiter"] - moon_s) % 3 == 0:
+        found.append({"name": "Gajakesari", "rule": "Jupiter in a kendra (1/4/7/10) from the Moon"})
+    if "sun" in sign and "mercury" in sign and sign["sun"] == sign["mercury"]:
+        found.append({"name": "Budhaditya", "rule": "Sun and Mercury in the same sign"})
+    if "moon" in sign and "mars" in sign and sign["moon"] == sign["mars"]:
+        found.append({"name": "Chandra-Mangala", "rule": "Moon and Mars conjunct"})
+
+    # Panch Mahapurusha: planet exalted/own/moolatrikona AND in a kendra from Lagna
+    if asc_s is not None:
+        for p, yname in _MAHAPURUSHA.items():
+            if p not in positions:
+                continue
+            dig = dignity(p, positions[p]["lon"])
+            if dig and dig["status"] in ("exalted", "own_sign", "moolatrikona") \
+                    and (sign[p] - asc_s) % 3 == 0:
+                found.append({"name": f"{yname} (Pancha Mahapurusha)",
+                              "rule": f"{p.capitalize()} strong (own/exalted) in a kendra from the Ascendant"})
+
+    # Kala Sarpa: all 7 planets on one side of the Rahu–Ketu axis
+    if "rahu" in positions and all(p in positions for p in
+                                   ("sun", "moon", "mars", "mercury", "jupiter", "venus", "saturn")):
+        rahu = _norm360(positions["rahu"]["lon"])
+        planets = ["sun", "moon", "mars", "mercury", "jupiter", "venus", "saturn"]
+        rel = [_norm360(positions[p]["lon"] - rahu) for p in planets]  # 0..360 from Rahu
+        if all(r <= 180 for r in rel) or all(r >= 180 for r in rel):
+            found.append({"name": "Kala Sarpa",
+                          "rule": "All seven planets between Rahu and Ketu"})
+
+    # Kemadruma: no planet (excl. Sun/nodes) in the 2nd, 12th or same sign as Moon
+    if moon_s is not None:
+        neighbours = {moon_s, (moon_s + 1) % 12, (moon_s - 1) % 12}
+        occupied = any(sign.get(p) in neighbours
+                       for p in ("mars", "mercury", "jupiter", "venus", "saturn"))
+        if not occupied:
+            found.append({"name": "Kemadruma",
+                          "rule": "No planet in the 2nd/12th or with the Moon (Moon isolated)"})
+
+    return {"note": "Presence detection by classical rule; not a full interpretation.",
+            "detected": found}

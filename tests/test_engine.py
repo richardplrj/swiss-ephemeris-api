@@ -291,3 +291,58 @@ def test_jyotisha_sections_in_chart():
     assert "dignity" in sun["sidereal"]
     venus = next(b for b in res["bodies"] if b["key"] == "venus")
     assert "combustion" in venus["sidereal"]
+
+
+# --------------------------------------------------------------------------- #
+# Dasha extensions, yogas, and Ashtakoot matching                              #
+# --------------------------------------------------------------------------- #
+from app import matching
+
+
+def test_ashtakoot_same_nakshatra_is_36():
+    # Identical Moon → every koota favourable, nadi-exception applies → 36/36.
+    r = matching.ashtakoot(45.0, 45.0)
+    assert r["total_points"] == 36.0
+    assert r["kootas"]["nadi"]["points"] == 8
+
+
+def test_ashtakoot_nadi_dosha():
+    # Ashwini and Punarvasu are both Aadi nadi (different nakshatras) → nadi 0.
+    r = matching.ashtakoot(5.0, 70.0)
+    assert r["kootas"]["nadi"]["points"] == 0
+    assert r["kootas"]["nadi"]["nadi_dosha"] is True
+    assert 0 <= r["total_points"] <= 36
+
+
+def test_yoni_matrix_symmetric_and_sworn_enemies():
+    m = matching._YONI_MATRIX
+    for i in range(14):
+        assert m[i][i] == 4
+        for j in range(14):
+            assert m[i][j] == m[j][i]            # symmetric
+    # the 7 classical sworn-enemy pairs must be 0
+    pairs = [(0, 8), (1, 13), (2, 11), (3, 12), (4, 10), (5, 6), (7, 9)]
+    for a, b in pairs:
+        assert m[a][b] == 0
+
+
+def test_yogini_start_formula():
+    # Rohini = nakshatra 4 → (4+3)%8 = 7 → Siddha.
+    _et, ut = _jd(1990, 8, 15)
+    y = jyotisha.yogini_dasha(ut, 45.0, engine.jd_to_time)
+    assert y["starting_yogini"] == "Siddha"
+    assert len(y["maha_dashas"]) == 8
+
+
+def test_vimshottari_pratyantar_present():
+    _et, ut = _jd(1990, 8, 15, 0, 15)
+    res = engine.compute_chart(jd_ut=ut, lat=28.6, lon=77.2, include={"dasha"})
+    assert "pratyantar" in res["dasha"]["current"]
+
+
+def test_matching_and_yoga_endpoints_shape():
+    _et, ut = _jd(1990, 8, 15, 0, 15)
+    res = engine.compute_chart(jd_ut=ut, lat=28.6, lon=77.2,
+                               include={"yogas", "yogini_dasha"})
+    assert "detected" in res["yogas"]
+    assert res["yogini_dasha"]["system"] == "Yogini"
