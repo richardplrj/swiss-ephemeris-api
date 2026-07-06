@@ -1,0 +1,9 @@
+# Swiss Ephemeris Open API — runtime dependencies
+# Python 3.11 is required: pyswisseph 2.10.3.2 ships prebuilt wheels only up to
+# cp311, so 3.12/3.13 would force a source compile.
+pyswisseph==2.10.3.2
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.29
+pydantic>=2.5,<3.0
+# IANA timezone DB for zoneinfo (python:3.11-slim ships no system tzdata)
+tzdata>=2024.1

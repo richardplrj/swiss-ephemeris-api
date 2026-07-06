@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Virtualenvs
+.venv/
+venv/
+env/
+
+# Env / secrets
+.env
+.env.local
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# NOTE: ephe/*.se1 data files ARE committed on purpose — they are the bundled
+# Swiss Ephemeris (AGPL-redistributable) and the service needs them at runtime.
