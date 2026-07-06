@@ -18,7 +18,7 @@ jobs:
     steps:
       - name: Ping /health to prevent free-tier sleep
         run: |
-          URL="https://swiss-ephemeris-api.onrender.com/health"
+          URL="https://swiss-ephemeris-api-2m5g.onrender.com/health"
           # --max-time 90 gives a sleeping service time to wake on the first hit.
           curl -fsS --max-time 90 "$URL" \
             && echo "awake: $URL" \
