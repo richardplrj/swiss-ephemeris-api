@@ -336,25 +336,67 @@ occultations, twilight, sky_position, all_house_systems, gauquelin, heliacal`
 
 ---
 
-## 7. Worked examples
+## 7. Worked examples — real, live, ready-to-call URLs
 
-**A birth-style chart (local time + timezone), core data only:**
-`GET /v1/chart?datetime=1990-08-15T05:45:00&tz=Asia/Kolkata&lat=28.6139&lon=77.2090`
-→ `meta`, `time`, 20 `bodies` (with tropical/sidereal/equatorial + house),
-`angles`, `houses`, `ayanamsha`. Sun sidereal ≈ Cancer 28° (Lahiri).
+**Live base URL:** `https://swiss-ephemeris-api-2m5g.onrender.com`
+Every example below is a complete working URL — open it in a browser or `curl` it.
 
-**Everything for a moment + place:**
-`GET /v1/chart?datetime=2026-07-06T12:00:00Z&lat=28.6&lon=77.2&bodies=all&frames=all&stars=all&nodes=both&include=all`
+**1) Current positions only (no place) — the simplest call:**
+```
+https://swiss-ephemeris-api-2m5g.onrender.com/v1/chart?datetime=2026-07-07T12:00:00Z
+```
+→ `meta`, `time`, `bodies` (tropical/sidereal/equatorial + speeds), `ayanamsha`.
+
+**2) A birth-style chart — local time + timezone + place (core data):**
+```
+https://swiss-ephemeris-api-2m5g.onrender.com/v1/chart?datetime=1990-08-15T05:45:00&tz=Asia/Kolkata&lat=28.6139&lon=77.2090
+```
+→ adds `angles` and `houses`. Sun sidereal ≈ Cancer 28° (Lahiri).
+
+**3) EVERYTHING for a moment + place (all bodies + all sections):**
+```
+https://swiss-ephemeris-api-2m5g.onrender.com/v1/chart?datetime=2026-07-07T12:00:00Z&lat=28.6&lon=77.2&bodies=all&frames=all&stars=all&nodes=both&include=all
+```
 → all core sections + all 12 opt-in sections + 43 bodies.
 
-**Just the Sun & Moon, sidereal, KP ayanamsha, Whole-sign houses:**
-`GET /v1/chart?datetime=2026-07-06T12:00:00Z&lat=28.6&lon=77.2&bodies=sun,moon&ayanamsha=kp&house_system=W`
+**4) Just Sun & Moon, sidereal KP ayanamsha, Whole-sign houses:**
+```
+https://swiss-ephemeris-api-2m5g.onrender.com/v1/chart?datetime=2026-07-07T12:00:00Z&lat=28.6&lon=77.2&bodies=sun,moon&ayanamsha=kp&house_system=W
+```
 
-**Eclipse calendar for a year:**
-`GET /v1/eclipses?start=2026-01-01T00:00:00Z&end=2027-01-01T00:00:00Z&kind=both`
+**5) Add eclipses + rise/set to a chart:**
+```
+https://swiss-ephemeris-api-2m5g.onrender.com/v1/chart?datetime=2026-07-07T12:00:00Z&lat=28.6&lon=77.2&include=eclipses,rise_transit
+```
 
-**Positions as seen from Mars:**
-`GET /v1/chart?datetime=2026-07-06T12:00:00Z&center=mars`
+**6) Positions as seen from Mars (planetocentric):**
+```
+https://swiss-ephemeris-api-2m5g.onrender.com/v1/chart?datetime=2026-07-07T12:00:00Z&center=mars
+```
+
+**7) Eclipse calendar for a year:**
+```
+https://swiss-ephemeris-api-2m5g.onrender.com/v1/eclipses?start=2026-01-01T00:00:00Z&end=2027-01-01T00:00:00Z&kind=both
+```
+
+**8) Time conversion (Julian Day, ΔT, sidereal time):**
+```
+https://swiss-ephemeris-api-2m5g.onrender.com/v1/time?datetime=2026-07-07T12:00:00Z&lon=77.2
+```
+
+**9) Discover all valid options (bodies, ayanamshas, house systems, includes):**
+```
+https://swiss-ephemeris-api-2m5g.onrender.com/v1/meta
+```
+
+**POST example** (same fields as JSON, for large requests):
+```
+curl -X POST https://swiss-ephemeris-api-2m5g.onrender.com/v1/chart \
+  -H 'content-type: application/json' \
+  -d '{"datetime":"2026-07-07T12:00:00Z","lat":28.6,"lon":77.2,"include":"all","bodies":"all"}'
+```
+
+**Interactive docs (for humans):** https://swiss-ephemeris-api-2m5g.onrender.com/docs
 
 ---
 
