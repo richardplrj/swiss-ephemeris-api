@@ -87,33 +87,6 @@ ALL_BODIES = DEFAULT_BODIES + EXTRA_BODIES + FICTITIOUS_BODIES
 BODY_KEY_TO_CONST = {key: const for key, const, _n, _c in ALL_BODIES}
 
 # --------------------------------------------------------------------------- #
-# Muhurta / Kaala tables (derived; used by vedic.py)                          #
-# --------------------------------------------------------------------------- #
-# Which of the 8 equal day-parts (1..8, sunrise→sunset) each falls in,
-# indexed by weekday 0=Sunday .. 6=Saturday.
-RAHU_KAAL_PART = [8, 2, 7, 5, 6, 4, 3]
-YAMAGANDA_PART = [5, 4, 3, 2, 1, 7, 6]
-GULIKA_PART = [7, 6, 5, 4, 3, 2, 1]
-
-# Choghadiya: 7 types with fixed quality. Day sequence starts at a weekday-set
-# offset and cycles in this fixed order; night sequence uses a +offset.
-CHOGHADIYA = {
-    "Udveg": ("bad", "Sun"), "Chal": ("neutral", "Venus"),
-    "Labh": ("good", "Mercury"), "Amrit": ("good", "Moon"),
-    "Kaal": ("bad", "Saturn"), "Shubh": ("good", "Jupiter"),
-    "Rog": ("bad", "Mars"),
-}
-# Fixed cyclic order of choghadiyas.
-CHOGHADIYA_ORDER = ["Udveg", "Chal", "Labh", "Amrit", "Kaal", "Shubh", "Rog"]
-# Index into CHOGHADIYA_ORDER of the FIRST day-choghadiya, by weekday 0=Sun..6=Sat.
-CHOGHADIYA_DAY_START = {0: 0, 1: 3, 2: 6, 3: 2, 4: 5, 5: 1, 6: 4}
-
-# Planetary-hours (Hora) ruler cycle (Chaldean order) and the day-lord that
-# rules the first hora after sunrise, by weekday 0=Sun..6=Sat.
-HORA_ORDER = ["Sun", "Venus", "Mercury", "Moon", "Saturn", "Jupiter", "Mars"]
-WEEKDAY_LORD = ["Sun", "Moon", "Mars", "Mercury", "Jupiter", "Venus", "Saturn"]
-
-# --------------------------------------------------------------------------- #
 # House systems (single-char swisseph codes)                                  #
 # --------------------------------------------------------------------------- #
 # The engine validates each code against the live build via swe.house_name();
@@ -240,63 +213,11 @@ AYANAMSHA_ALIASES: dict[str, int] = {
 }
 
 # --------------------------------------------------------------------------- #
-# Vedic naming tables                                                         #
+# Zodiac signs (30° ecliptic sectors — how swe_split_deg presents longitude)   #
 # --------------------------------------------------------------------------- #
 SIGNS = [
     "Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo",
     "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces",
-]
-SIGNS_SANSKRIT = [
-    "Mesha", "Vrishabha", "Mithuna", "Karka", "Simha", "Kanya",
-    "Tula", "Vrishchika", "Dhanu", "Makara", "Kumbha", "Meena",
-]
-
-NAKSHATRAS = [
-    "Ashwini", "Bharani", "Krittika", "Rohini", "Mrigashira", "Ardra",
-    "Punarvasu", "Pushya", "Ashlesha", "Magha", "Purva Phalguni",
-    "Uttara Phalguni", "Hasta", "Chitra", "Swati", "Vishakha", "Anuradha",
-    "Jyeshtha", "Mula", "Purva Ashadha", "Uttara Ashadha", "Shravana",
-    "Dhanishta", "Shatabhisha", "Purva Bhadrapada", "Uttara Bhadrapada",
-    "Revati",
-]
-# Vimshottari dasha lord of each nakshatra (repeats every 9).
-_NAKSHATRA_LORD_CYCLE = [
-    "Ketu", "Venus", "Sun", "Moon", "Mars", "Rahu", "Jupiter", "Saturn", "Mercury",
-]
-NAKSHATRA_LORDS = [_NAKSHATRA_LORD_CYCLE[i % 9] for i in range(27)]
-
-# Tithi names within a paksha (1..15). Index 14 differs by paksha
-# (Purnima for Shukla, Amavasya for Krishna) — handled in vedic.py.
-TITHI_NAMES = [
-    "Pratipada", "Dwitiya", "Tritiya", "Chaturthi", "Panchami", "Shashthi",
-    "Saptami", "Ashtami", "Navami", "Dashami", "Ekadashi", "Dwadashi",
-    "Trayodashi", "Chaturdashi", "Purnima/Amavasya",
-]
-
-YOGAS = [
-    "Vishkambha", "Priti", "Ayushman", "Saubhagya", "Shobhana", "Atiganda",
-    "Sukarma", "Dhriti", "Shula", "Ganda", "Vriddhi", "Dhruva", "Vyaghata",
-    "Harshana", "Vajra", "Siddhi", "Vyatipata", "Variyana", "Parigha",
-    "Shiva", "Siddha", "Sadhya", "Shubha", "Shukla", "Brahma", "Indra",
-    "Vaidhriti",
-]
-
-# The 7 repeating (movable) karanas + 4 fixed karanas. Mapping of the 60
-# half-tithis of a lunar month to names is done in vedic.py.
-KARANA_MOVABLE = [
-    "Bava", "Balava", "Kaulava", "Taitila", "Gara", "Vanija", "Vishti",
-]
-KARANA_FIXED = ["Shakuni", "Chatushpada", "Naga", "Kimstughna"]
-
-# Weekday (vara). Index 0 = Sunday, matching (floor(jd_ut + 1.5) % 7).
-WEEKDAYS = [
-    ("Sunday", "Ravivara", "Sun"),
-    ("Monday", "Somavara", "Moon"),
-    ("Tuesday", "Mangalavara", "Mars"),
-    ("Wednesday", "Budhavara", "Mercury"),
-    ("Thursday", "Guruvara", "Jupiter"),
-    ("Friday", "Shukravara", "Venus"),
-    ("Saturday", "Shanivara", "Saturn"),
 ]
 
 # --------------------------------------------------------------------------- #

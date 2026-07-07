@@ -20,8 +20,6 @@ from functools import lru_cache
 import swisseph as swe
 
 from . import catalog
-from . import vedic
-from . import jyotisha
 
 # --------------------------------------------------------------------------- #
 # Module state                                                                #
@@ -128,26 +126,8 @@ def _sign_block(longitude: float, sidereal: bool = False) -> dict:
     return {
         "index": idx,
         "name": catalog.SIGNS[idx],
-        "sanskrit": catalog.SIGNS_SANSKRIT[idx],
         "degrees_in_sign": round(deg_in_sign, 6),
         "dms": f"{d:02d}°{m:02d}'{s:04.1f}\"",
-    }
-
-
-def _nakshatra_block(sidereal_longitude: float) -> dict:
-    """27-nakshatra placement of a *sidereal* longitude."""
-    lon = _norm360(sidereal_longitude)
-    span = 360.0 / 27.0                      # 13°20'
-    idx = int(lon // span) % 27
-    pos_in_nak = lon - idx * span
-    pada = int(pos_in_nak // (span / 4.0)) + 1
-    return {
-        "index": idx,
-        "number": idx + 1,
-        "name": catalog.NAKSHATRAS[idx],
-        "pada": pada,
-        "lord": catalog.NAKSHATRA_LORDS[idx],
-        "degrees_in_nakshatra": round(pos_in_nak, 6),
     }
 
 
@@ -266,8 +246,6 @@ def _body_object(jd_ut, key, ipl, name, category, want_pheno, want_topo,
     if sid_xx is not None:
         sid = _ecliptic(sid_xx)
         sid["sign"] = _sign_block(sid_xx[0], sidereal=True)
-        sid["nakshatra"] = _nakshatra_block(sid_xx[0])
-        sid["navamsa"] = vedic.navamsa_sign(sid_xx[0])
         obj["sidereal"] = sid
 
     if equ_xx is not None:
@@ -342,9 +320,6 @@ def _ketu_object(rahu_obj: dict, armc, geolat, eps) -> dict:
             "retrograde": src["retrograde"],
             "sign": _sign_block(lon),
         }
-        if zodiac == "sidereal":
-            blk["nakshatra"] = _nakshatra_block(lon)
-            blk["navamsa"] = vedic.navamsa_sign(lon)
         ket[zodiac] = blk
     if armc is not None and ket.get("tropical"):
         try:
@@ -564,8 +539,7 @@ def fixed_stars(jd_ut, armc, geolat, eps, names=None) -> list[dict]:
                              "sign": _sign_block(trop[0])},
                 "sidereal": {"longitude": round(_norm360(sid[0]), 8),
                              "latitude": round(sid[1], 8),
-                             "sign": _sign_block(sid[0], True),
-                             "nakshatra": _nakshatra_block(sid[0])},
+                             "sign": _sign_block(sid[0], True)},
                 "equatorial": {"right_ascension": round(_norm360(equ[0]), 8),
                                "declination": round(equ[1], 8)},
             }
@@ -645,9 +619,7 @@ def orbital_elements(jd_et) -> dict:
 HEAVY_SECTIONS = ("eclipses", "rise_transit", "fixed_stars",
                   "nodes_apsides", "orbital_elements", "crossings",
                   "occultations", "twilight", "sky_position",
-                  "all_house_systems", "gauquelin",
-                  "dasha", "divisional_charts", "ashtakavarga", "aspects",
-                  "yogini_dasha", "yogas")
+                  "all_house_systems", "gauquelin")
 
 
 def compute_chart(*, jd_ut, jd_et=None, lat=None, lon=None, alt=0.0,
@@ -720,19 +692,15 @@ def compute_chart(*, jd_ut, jd_et=None, lat=None, lon=None, alt=0.0,
 
         # ---- houses & angles (tropical + sidereal) ------------------------ #
         armc = None
-        asc_sid_sign = None
-        asc_sid_lon = None
         houses_block = None
         angles_block = None
         if has_place:
             try:
                 trop_cusps, trop_angles, trop_ascmc = _houses(
                     jd_ut, lat, lon, hsys_byte, sidereal=False)
-                sid_cusps, sid_angles, sid_ascmc = _houses(
+                sid_cusps, sid_angles, _sid_ascmc = _houses(
                     jd_ut, lat, lon, hsys_byte, sidereal=True)
                 armc = trop_ascmc[2]
-                asc_sid_lon = _norm360(sid_ascmc[0])
-                asc_sid_sign = int(asc_sid_lon // 30)
                 houses_block = {
                     "system": hsys,
                     "system_name": catalog.HOUSE_SYSTEMS.get(hsys, hsys),
@@ -742,7 +710,7 @@ def compute_chart(*, jd_ut, jd_et=None, lat=None, lon=None, alt=0.0,
                 angles_block = {"tropical": trop_angles, "sidereal": sid_angles}
             except swe.Error:
                 # date beyond house-computable range → skip houses/angles
-                armc = asc_sid_sign = asc_sid_lon = houses_block = angles_block = None
+                armc = houses_block = angles_block = None
 
         # ---- bodies ------------------------------------------------------- #
         bodies = []
@@ -751,53 +719,13 @@ def compute_chart(*, jd_ut, jd_et=None, lat=None, lon=None, alt=0.0,
             obj = _body_object(jd_ut, key, ipl, name, category,
                                want_phenomena, topocentric and has_place,
                                armc, lat, eps_true, frames=frames)
-            # whole-sign house relative to the sidereal ascendant
-            if asc_sid_sign is not None and obj.get("sidereal"):
-                bsign = obj["sidereal"]["sign"]["index"]
-                obj["sidereal"]["whole_sign_house"] = ((bsign - asc_sid_sign) % 12) + 1
             bodies.append(obj)
             by_key[key] = obj
 
-        # Ketu (South Node), derived from the true node if present.
+        # Ketu (descending lunar node) = ascending node + 180°.
         rahu = by_key.get("true_node") or by_key.get("mean_node")
         if rahu and "error" not in rahu:
-            ketu = _ketu_object(rahu, armc, lat, eps_true)
-            if asc_sid_sign is not None and ketu.get("sidereal"):
-                bsign = ketu["sidereal"]["sign"]["index"]
-                ketu["sidereal"]["whole_sign_house"] = ((bsign - asc_sid_sign) % 12) + 1
-            bodies.append(ketu)
-            by_key["ketu"] = ketu
-
-        # ---- dignity + combustion attached to each classical planet ------- #
-        sun_sid = (by_key.get("sun", {}).get("sidereal") or {}).get("longitude")
-        for pkey in ("sun", "moon", "mars", "mercury", "jupiter", "venus", "saturn"):
-            pb = by_key.get(pkey)
-            if not pb or not pb.get("sidereal"):
-                continue
-            dig = jyotisha.dignity(pkey, pb["sidereal"]["longitude"])
-            if dig:
-                pb["sidereal"]["dignity"] = dig
-            if pkey != "sun" and sun_sid is not None:
-                cmb = jyotisha.combustion(pkey, sun_sid, pb["sidereal"]["longitude"],
-                                          pb["sidereal"]["retrograde"])
-                if cmb:
-                    pb["sidereal"]["combustion"] = cmb
-
-        # ---- Vedic panchanga / varga ------------------------------------- #
-        vedic_block = None
-        sun_o, moon_o = by_key.get("sun"), by_key.get("moon")
-        if sun_o and moon_o and sun_o.get("sidereal") and moon_o.get("sidereal"):
-            moon_illum = None
-            if moon_o.get("phenomena"):
-                moon_illum = moon_o["phenomena"]["phase_illuminated_fraction"]
-            vedic_block = vedic.compute(
-                jd_ut,
-                sun_o["sidereal"]["longitude"],
-                moon_o["sidereal"]["longitude"],
-                moon_illum=moon_illum,
-                geolat=lat, geolon=lon, alt=alt,
-                atpress=atpress, attemp=attemp,
-                jd_to_time=jd_to_time)
+            bodies.append(_ketu_object(rahu, armc, lat, eps_true))
 
         # ---- ayanamsha value + full table (table mutates sid mode) -------- #
         _ret, ayan_val = swe.get_ayanamsa_ex_ut(jd_ut, swe.FLG_SWIEPH)
@@ -823,8 +751,6 @@ def compute_chart(*, jd_ut, jd_et=None, lat=None, lon=None, alt=0.0,
         if houses_block:
             result["houses"] = houses_block
         result["ayanamsha"] = ayan_block
-        if vedic_block:
-            result["vedic"] = vedic_block
 
         # ---- heavy / opt-in ---------------------------------------------- #
         if "eclipses" in include:
@@ -867,43 +793,6 @@ def compute_chart(*, jd_ut, jd_et=None, lat=None, lon=None, alt=0.0,
         elif "gauquelin" in include:
             result["gauquelin"] = {"error": "lat/lon required"}
 
-        # ---- Jyotisha interpretation layer (opt-in) ---------------------- #
-        sid7 = {k: {"lon": by_key[k]["sidereal"]["longitude"],
-                    "retro": by_key[k]["sidereal"]["retrograde"],
-                    "lat": by_key[k]["sidereal"]["latitude"]}
-                for k in ("sun", "moon", "mars", "mercury", "jupiter",
-                          "venus", "saturn")
-                if by_key.get(k) and by_key[k].get("sidereal")}
-        if "aspects" in include and sid7:
-            result["aspects"] = {
-                "note": "Whole-sign graha drishti; nodes omitted (convention-dependent).",
-                "graha_drishti": jyotisha.graha_drishti(sid7),
-                "graha_yuddha": jyotisha.graha_yuddha(sid7),
-            }
-        if "dasha" in include:
-            mo = by_key.get("moon", {}).get("sidereal")
-            result["dasha"] = (jyotisha.vimshottari(jd_ut, mo["longitude"], jd_to_time)
-                               if mo else {"error": "moon position unavailable"})
-        if "yogini_dasha" in include:
-            mo = by_key.get("moon", {}).get("sidereal")
-            result["yogini_dasha"] = (jyotisha.yogini_dasha(jd_ut, mo["longitude"], jd_to_time)
-                                      if mo else {"error": "moon position unavailable"})
-        if "yogas" in include:
-            yp = dict(sid7)
-            rahu = by_key.get("true_node", {}).get("sidereal")
-            if rahu:
-                yp["rahu"] = {"lon": rahu["longitude"]}
-            result["yogas"] = jyotisha.yogas(yp, asc_sid_lon)
-        if "divisional_charts" in include:
-            all_sid = {b["key"]: {"lon": b["sidereal"]["longitude"]}
-                       for b in bodies if b.get("sidereal")}
-            result["divisional_charts"] = jyotisha.divisional_charts(all_sid, asc_sid_lon)
-        if "ashtakavarga" in include:
-            result["ashtakavarga"] = (
-                jyotisha.ashtakavarga(sid7, asc_sid_lon)
-                if (asc_sid_lon is not None and sid7)
-                else {"error": "lat/lon required (Ascendant needed for ashtakavarga)"})
-
         return result
 
 
@@ -916,16 +805,6 @@ def julian_day_utc(year, month, day, hour, minute, second):
         if not _initialized:
             init()
         return swe.utc_to_jd(year, month, day, hour, minute, second, swe.GREG_CAL)
-
-
-def moon_sidereal_longitude(jd_ut, ayanamsha_id=1):
-    """Just the Moon's sidereal longitude — for the two-person matching route."""
-    with _LOCK:
-        if not _initialized:
-            init()
-        swe.set_sid_mode(ayanamsha_id, 0, 0)
-        xx, _ = swe.calc_ut(jd_ut, swe.MOON, _BASE | swe.FLG_SIDEREAL)
-        return _norm360(xx[0])
 
 
 def valid_house_systems() -> dict:

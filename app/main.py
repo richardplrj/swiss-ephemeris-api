@@ -20,20 +20,23 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
-from . import __version__, catalog, engine, vedic, matching
+from . import __version__, catalog, engine
 
 # --------------------------------------------------------------------------- #
 # App                                                                          #
 # --------------------------------------------------------------------------- #
 DESCRIPTION = """
-A free, open, no-rate-limit API over the **Swiss Ephemeris** — the same
-arc-second-precision engine professional astrology software uses.
+A free, open, no-rate-limit API exposing the **entire Swiss Ephemeris** — the
+same arc-second-precision astronomical engine professional software uses. Pure
+astronomy: no interpretation layer.
 
-`GET /v1/chart` returns **everything** for a moment (and place): tropical +
-sidereal + equatorial positions of all bodies, all house cusps and chart angles,
-the full ayanamsha table, and Vedic panchanga (nakshatra, tithi, yoga, karana,
-navamsa, sunrise). Heavy searches (eclipses, rise/set, fixed stars, nodes,
-orbital elements) are opt-in via `include=`.
+`GET /v1/chart` returns, for a moment (and place): tropical + sidereal +
+equatorial positions of all bodies (with speeds & retrograde), all house cusps
+and chart angles, and the full ayanamsha table. Heavy computations — eclipses,
+occultations, rise/set, twilight, sky position, fixed stars, nodes/apsides,
+orbital elements, ingress/crossing times, Gauquelin sectors, all house systems —
+are opt-in via `include=`. Coordinate frames (heliocentric, barycentric, J2000,
+XYZ…) via `frames=`. See `/v1/meta`.
 
 Powered by [pyswisseph](https://pypi.org/project/pyswisseph/). Swiss Ephemeris
 is © Astrodienst AG, used here under the **AGPL-3.0**. This service is
@@ -299,8 +302,7 @@ class ChartRequest(BaseModel):
     include: str | None = Field(
         None, description="CSV of heavy sections, or 'all': "
         "eclipses,rise_transit,fixed_stars,nodes_apsides,orbital_elements,"
-        "crossings,occultations,twilight,sky_position,all_house_systems,gauquelin,"
-        "dasha,divisional_charts,ashtakavarga,aspects")
+        "crossings,occultations,twilight,sky_position,all_house_systems,gauquelin")
     topocentric: bool = False
     frames: str | None = Field(
         None, description="extra coordinate frames per body, CSV or 'all': "
@@ -387,57 +389,6 @@ def eclipses_range(
             "kind": kind, **data}
 
 
-class MatchRequest(BaseModel):
-    boy_datetime: str = Field(..., examples=["1990-08-15T05:45:00"])
-    boy_tz: str | None = Field("UTC", examples=["Asia/Kolkata"])
-    girl_datetime: str = Field(..., examples=["1992-11-03T22:10:00"])
-    girl_tz: str | None = Field("UTC", examples=["Asia/Kolkata"])
-    ayanamsha: str = Field("lahiri")
-
-
-def _moon_lon(dt_str, tz, ayan_id):
-    jd_ut, _e, _echo = _to_jd(dt_str, tz, None)
-    return engine.moon_sidereal_longitude(jd_ut, ayan_id)
-
-
-@app.post("/v1/matching", tags=["events"],
-          summary="Ashtakoot / Guna Milan (36-point marriage compatibility)")
-def matching_post(req: MatchRequest, response: Response):
-    try:
-        ayan_id, _n = engine.resolve_ayanamsha(req.ayanamsha)
-    except ValueError as exc:
-        raise HTTPException(422, str(exc))
-    try:
-        boy = _moon_lon(req.boy_datetime, req.boy_tz, ayan_id)
-        girl = _moon_lon(req.girl_datetime, req.girl_tz, ayan_id)
-    except swe.Error as exc:
-        raise HTTPException(422, f"cannot compute: {exc}")
-    response.headers["Cache-Control"] = _CACHE
-    return matching.ashtakoot(boy, girl)
-
-
-@app.get("/v1/matching", tags=["events"], summary="Ashtakoot (query params)")
-def matching_get(
-    response: Response,
-    boy_datetime: str = Query(..., examples=["1990-08-15T05:45:00"]),
-    girl_datetime: str = Query(..., examples=["1992-11-03T22:10:00"]),
-    boy_tz: str | None = Query("UTC"),
-    girl_tz: str | None = Query("UTC"),
-    ayanamsha: str = Query("lahiri"),
-):
-    try:
-        ayan_id, _n = engine.resolve_ayanamsha(ayanamsha)
-    except ValueError as exc:
-        raise HTTPException(422, str(exc))
-    try:
-        boy = _moon_lon(boy_datetime, boy_tz, ayan_id)
-        girl = _moon_lon(girl_datetime, girl_tz, ayan_id)
-    except swe.Error as exc:
-        raise HTTPException(422, f"cannot compute: {exc}")
-    response.headers["Cache-Control"] = _CACHE
-    return matching.ashtakoot(boy, girl)
-
-
 @app.get("/v1/stars", tags=["chart"], summary="List all fixed-star names (~800)")
 def stars_list():
     names = engine.all_star_names()
@@ -463,7 +414,6 @@ def time_convert(
             "jd_et": jd_et if jd_et is not None else jd_ut_val + dt_days,
             "delta_t_seconds": round(dt_days * 86400.0, 6),
             "greenwich_sidereal_time_hours": round(gst, 8),
-            "weekday": vedic.weekday(jd_ut_val),
         }
         if lon is not None:
             out["local_sidereal_time_hours"] = round((gst + lon / 15.0) % 24, 8)
