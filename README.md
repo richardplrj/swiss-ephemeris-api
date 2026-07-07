@@ -7,6 +7,8 @@ A **free, open, no-rate-limit** HTTP API over the [Swiss Ephemeris](https://www.
 - 🪐 **Complete — verified 100%** of the Swiss Ephemeris *data* surface (audited function-by-function): positions & speeds for all bodies + coordinate frames, every house system + cusp speeds, all 47 ayanamshas, chart angles, phenomena, eclipses & occultations (with ground path), risings/settings/twilight, sky position, heliacal visibility, fixed stars, nodes & orbital elements + distance envelope, ingress/crossing times (geo & heliocentric), Gauquelin sectors, planetocentric positions.
 - 🆓 **No API keys, no rate limits, CORS-open.**
 
+> 📄 **Feeding this to an AI?** [`LLM.md`](./LLM.md) is a complete, exact reference (every endpoint, parameter, and response field) written for LLM consumption. The machine-readable OpenAPI spec is also live at `/openapi.json`.
+
 > Powered by [`pyswisseph`](https://pypi.org/project/pyswisseph/). Swiss Ephemeris is © Astrodienst AG and used here under the **GNU AGPL-3.0**. This service is Free/Libre software; its complete source is linked in every response (`meta.source`). See [License](#license).
 
 ---
