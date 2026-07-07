@@ -17,8 +17,9 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import swisseph as swe
 from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import __version__, catalog, engine
 
@@ -67,6 +68,22 @@ app.add_middleware(
 @app.on_event("startup")
 def _startup() -> None:
     engine.init()
+
+
+@app.exception_handler(StarletteHTTPException)
+async def _http_exception(request, exc: StarletteHTTPException):
+    """A wrong path returns a helpful pointer to the real endpoints instead of a
+    bare 404. Other HTTP errors keep the standard {"detail": ...} shape."""
+    if exc.status_code == 404:
+        return JSONResponse(status_code=404, content={
+            "error": "not_found",
+            "message": f"No endpoint at '{request.url.path}'.",
+            "endpoints": ["/v1/chart", "/v1/eclipses", "/v1/stars", "/v1/time",
+                          "/v1/meta", "/health", "/license", "/docs"],
+            "hint": ("Main endpoint: GET /v1/chart?datetime=2026-07-07T12:00:00Z"
+                     "&lat=28.6&lon=77.2  — see /docs or /v1/meta."),
+        })
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
 
 # --------------------------------------------------------------------------- #
