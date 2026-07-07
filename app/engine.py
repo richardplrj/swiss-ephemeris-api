@@ -428,13 +428,23 @@ def eclipses(jd_ut, geolat, geolon, alt) -> dict:
     # Solar — next & previous, globally.
     try:
         ret, tret = swe.sol_eclipse_when_glob(jd_ut, swe.FLG_SWIEPH, 0, False)
-        out["next_solar_global"] = {
+        block = {
             "type": _solar_eclipse_type(ret),
             "central": bool(ret & swe.ECL_CENTRAL),
             "maximum": jd_to_time(tret[0]),
             "begin": jd_to_time(tret[2]),
             "end": jd_to_time(tret[3]),
         }
+        try:  # geographic path (central line + shadow limits) at maximum
+            wret, geo, gattr = swe.sol_eclipse_where(tret[0], swe.FLG_SWIEPH)
+            block["path"] = {
+                "central_line": {"longitude": round(geo[0], 6), "latitude": round(geo[1], 6)},
+                "eclipse_magnitude": round(gattr[0], 6),
+                "obscuration": round(gattr[2], 6),
+            }
+        except swe.Error:
+            pass
+        out["next_solar_global"] = block
         ret, tret = swe.sol_eclipse_when_glob(jd_ut, swe.FLG_SWIEPH, 0, True)
         out["previous_solar_global"] = {
             "type": _solar_eclipse_type(ret), "maximum": jd_to_time(tret[0])}
@@ -608,6 +618,13 @@ def orbital_elements(jd_et) -> dict:
                 "perihelion_distance_au": round(e[15], 8),
                 "aphelion_distance_au": round(e[16], 8),
             }
+            try:  # max / min / current true geocentric distance envelope
+                mx, mn, tr = swe.orbit_max_min_true_distance(jd_et, ipl, swe.FLG_SWIEPH)
+                out[key]["max_distance_au"] = round(mx, 8)
+                out[key]["min_distance_au"] = round(mn, 8)
+                out[key]["true_distance_au"] = round(tr, 8)
+            except swe.Error:
+                pass
         except swe.Error as exc:
             out[key] = {"error": str(exc)}
     return out
@@ -619,7 +636,7 @@ def orbital_elements(jd_et) -> dict:
 HEAVY_SECTIONS = ("eclipses", "rise_transit", "fixed_stars",
                   "nodes_apsides", "orbital_elements", "crossings",
                   "occultations", "twilight", "sky_position",
-                  "all_house_systems", "gauquelin")
+                  "all_house_systems", "gauquelin", "heliacal")
 
 
 def compute_chart(*, jd_ut, jd_et=None, lat=None, lon=None, alt=0.0,
@@ -627,7 +644,7 @@ def compute_chart(*, jd_ut, jd_et=None, lat=None, lon=None, alt=0.0,
                   hsys="P", body_defs=None, include=None,
                   topocentric=False, want_phenomena=True,
                   frames=None, star_names=None, nodes_method="mean",
-                  sid_t0=0.0, sid_ayan_t0=0.0,
+                  sid_t0=0.0, sid_ayan_t0=0.0, center=None,
                   atpress=0.0, attemp=0.0, input_echo=None):
     """Assemble the full 'everything' chart. Serialized by _LOCK because every
     swisseph global (sid mode, topocentre, ephe path) is process-global."""
@@ -706,6 +723,10 @@ def compute_chart(*, jd_ut, jd_et=None, lat=None, lon=None, alt=0.0,
                     "system_name": catalog.HOUSE_SYSTEMS.get(hsys, hsys),
                     "tropical": trop_cusps,
                     "sidereal": sid_cusps,
+                    "speeds": {
+                        "tropical": house_cusp_speeds(jd_ut, lat, lon, hsys_byte, False),
+                        "sidereal": house_cusp_speeds(jd_ut, lat, lon, hsys_byte, True),
+                    },
                 }
                 angles_block = {"tropical": trop_angles, "sidereal": sid_angles}
             except swe.Error:
@@ -792,6 +813,20 @@ def compute_chart(*, jd_ut, jd_et=None, lat=None, lon=None, alt=0.0,
                 jd_ut, lat, lon, alt, body_defs, atpress, attemp)
         elif "gauquelin" in include:
             result["gauquelin"] = {"error": "lat/lon required"}
+        if "heliacal" in include and has_place:
+            result["heliacal"] = heliacal(jd_ut, lat, lon, alt)
+        elif "heliacal" in include:
+            result["heliacal"] = {"error": "lat/lon required"}
+
+        # Planetocentric positions (a body seen from another center body).
+        if center is not None:
+            ckey = str(center).strip().lower()
+            if ckey in catalog.BODY_KEY_TO_CONST:
+                result["planetocentric"] = planetocentric(
+                    jd_et, catalog.BODY_KEY_TO_CONST[ckey], ckey, body_defs)
+            else:
+                result["planetocentric"] = {
+                    "error": f"unknown center body: {center!r}"}
 
         return result
 
@@ -923,6 +958,25 @@ def crossings(jd_ut) -> dict:
                                      "longitude": round(_norm360(lon), 6)}
     except swe.Error as exc:
         out["moon_node_crossing"] = {"error": str(exc)}
+
+    # Heliocentric sign-ingress (next 30° heliocentric-longitude crossing).
+    helio = {}
+    for key in ("mercury", "venus", "mars", "jupiter", "saturn",
+                "uranus", "neptune", "pluto"):
+        ipl = catalog.BODY_KEY_TO_CONST[key]
+        try:
+            xx, _ = _calc(jd_ut, ipl, _BASE | swe.FLG_HELCTR)
+            if xx is None:
+                continue
+            cur = int(_norm360(xx[0]) // 30)
+            target = ((cur + 1) % 12) * 30
+            t = swe.helio_cross_ut(ipl, float(target), jd_ut, swe.FLG_SWIEPH, False)
+            helio[key] = {"to_sign": catalog.SIGNS[(cur + 1) % 12],
+                          "time": jd_to_time(t)}
+        except swe.Error:
+            continue
+    if helio:
+        out["heliocentric_ingress"] = helio
     return out
 
 
@@ -972,6 +1026,12 @@ def occultations(jd_ut, geolat, geolon, alt) -> dict:
         try:
             _ret, tret = swe.lun_occult_when_glob(jd_ut, body, swe.FLG_SWIEPH, 0, False)
             entry["next_global"] = jd_to_time(tret[0])
+            try:  # geographic point where the occultation is central/maximal
+                _wr, geo, _at = swe.lun_occult_where(tret[0], body, swe.FLG_SWIEPH)
+                entry["path"] = {"longitude": round(geo[0], 6),
+                                 "latitude": round(geo[1], 6)}
+            except swe.Error:
+                pass
         except swe.Error:
             entry["next_global"] = None
         if has_place:
@@ -1034,3 +1094,77 @@ def ayanamsha_true_mean(jd_ut) -> dict:
     _r2, mean_v = swe.get_ayanamsa_ex_ut(jd_ut, swe.FLG_SWIEPH | swe.FLG_NONUT)
     return {"with_nutation": round(true_v, 8),
             "mean_without_nutation": round(mean_v, 8)}
+
+
+# Standard-atmosphere + naked-eye observer defaults for heliacal/visibility.
+_ATMO = (1013.25, 15.0, 40.0, 0.25)          # pressure, temp°C, humidity%, range
+_OBSERVER = (36.0, 1.0, 0.0, 0.0, 0.0, 0.0)   # age, Snellen, (naked eye)
+# Lowercase to match the rest of the API's body keys AND because the heliacal C
+# functions lowercase the name buffer in place (case-insensitive star matching).
+_HELIACAL_BODIES = ["venus", "mercury", "mars", "jupiter", "saturn", "sirius", "canopus"]
+
+
+def heliacal(jd_ut, geolat, geolon, alt) -> dict:
+    """Heliacal risings/settings (first/last visibility) + dark-sky limiting
+    magnitude, for the classical naked-eye bodies. Standard atmosphere."""
+    geopos = (geolon, geolat, alt or 0.0)
+    out = {}
+    for name in _HELIACAL_BODIES:
+        entry = {}
+        for label, et in (("heliacal_rising", swe.HELIACAL_RISING),
+                           ("heliacal_setting", swe.HELIACAL_SETTING)):
+            try:
+                r = swe.heliacal_ut(jd_ut, geopos, _ATMO, _OBSERVER, name, et, 0)
+                entry[label] = {"visibility_start": jd_to_time(r[0]),
+                                "optimum": jd_to_time(r[1]),
+                                "visibility_end": jd_to_time(r[2])}
+            except swe.Error:
+                entry[label] = None
+        try:
+            mag, _attr = swe.vis_limit_mag(jd_ut, geopos, _ATMO, _OBSERVER, name, 0)
+            entry["limiting_magnitude"] = round(mag, 4)
+        except swe.Error:
+            pass
+        try:  # detailed observability (arcus visionis, extinction, VR window, …)
+            ph = swe.heliacal_pheno_ut(jd_ut, geopos, _ATMO, _OBSERVER, name, 1, 0)
+            entry["observability"] = {
+                "object_altitude": round(ph[0], 4),
+                "sun_altitude": round(ph[3], 4),
+                "arcus_visionis": round(ph[6], 4),
+                "min_visible_magnitude": round(ph[7], 4),
+                "raw": [round(x, 6) for x in ph],
+            }
+        except (swe.Error, IndexError):
+            pass
+        out[name] = entry
+    return out
+
+
+def planetocentric(jd_et, center_ipl, center_name, body_defs) -> dict:
+    """Positions of each body as seen from an arbitrary center body (swe_calc_pctr)."""
+    out = {"center": center_name, "bodies": {}}
+    for key, ipl, _name, _cat in body_defs:
+        if ipl == center_ipl:
+            continue
+        try:
+            xx, _rf = swe.calc_pctr(jd_et, ipl, center_ipl, _BASE)
+            out["bodies"][key] = {"longitude": round(_norm360(xx[0]), 8),
+                                  "latitude": round(xx[1], 8),
+                                  "distance_au": round(xx[2], 10),
+                                  "longitude_speed": round(xx[3], 8)}
+        except swe.Error:
+            continue
+    return out
+
+
+def house_cusp_speeds(jd_ut, geolat, geolon, hsys_byte, sidereal=False):
+    """Cusp + angle rates of change (swe_houses_ex2)."""
+    flags = swe.FLG_SIDEREAL if sidereal else 0
+    try:
+        _c, _a, cuspspeed, ascmcspeed = swe.houses_ex2(
+            jd_ut, geolat, geolon, hsys_byte, flags)
+        return {"cusps": [round(s, 8) for s in cuspspeed],
+                "angles": {catalog.ASCMC_NAMES[i]: round(ascmcspeed[i], 8)
+                           for i in range(min(len(ascmcspeed), len(catalog.ASCMC_NAMES)))}}
+    except swe.Error:
+        return None

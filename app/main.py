@@ -177,7 +177,7 @@ def _resolve_include(include: str | None):
 def _run(*, datetime_str, jd_ut, tz, lat, lon, alt, ayanamsha, house_system,
          bodies, include, topocentric, atpress, attemp,
          frames=None, stars=None, nodes="mean",
-         ayan_t0=0.0, ayan_value=0.0):
+         ayan_t0=0.0, ayan_value=0.0, center=None):
     jd_ut_val, jd_et, echo = _to_jd(datetime_str, tz, jd_ut)
 
     # Custom (user-defined) ayanamsha: ?ayanamsha=user with ayan_t0 + ayan_value.
@@ -216,7 +216,7 @@ def _run(*, datetime_str, jd_ut, tz, lat, lon, alt, ayanamsha, house_system,
             body_defs=_resolve_bodies(bodies), include=_resolve_include(include),
             topocentric=topocentric, frames=_resolve_frames(frames),
             star_names=star_names, nodes_method=_resolve_nodes(nodes),
-            sid_t0=sid_t0, sid_ayan_t0=sid_ayan_t0,
+            sid_t0=sid_t0, sid_ayan_t0=sid_ayan_t0, center=center,
             atpress=atpress or 0.0, attemp=attemp or 0.0, input_echo=echo)
     except swe.Error as exc:
         # e.g. a date beyond the ~3000 BCE–3000 CE computable range
@@ -309,6 +309,7 @@ class ChartRequest(BaseModel):
         "heliocentric,barycentric,j2000,astrometric,true_geometric,xyz")
     stars: str | None = Field(None, description="fixed stars: CSV of names, or 'all' (~800)")
     nodes: str = Field("mean", description="node/apsis method: mean, osculating, or both")
+    center: str | None = Field(None, description="planetocentric center body (e.g. 'mars')")
     ayan_t0: float | None = Field(0.0, description="reference JD for a custom (user) ayanamsha")
     ayan_value: float | None = Field(0.0, description="ayanamsha degrees at ayan_t0 (with ayanamsha=user)")
     atpress: float | None = Field(0.0, description="atmospheric pressure (mbar) for rise/set")
@@ -322,8 +323,8 @@ def chart_post(req: ChartRequest, response: Response):
         lat=req.lat, lon=req.lon, alt=req.alt, ayanamsha=req.ayanamsha,
         house_system=req.house_system, bodies=req.bodies, include=req.include,
         topocentric=req.topocentric, frames=req.frames, stars=req.stars,
-        nodes=req.nodes, ayan_t0=req.ayan_t0, ayan_value=req.ayan_value,
-        atpress=req.atpress, attemp=req.attemp)
+        nodes=req.nodes, center=req.center, ayan_t0=req.ayan_t0,
+        ayan_value=req.ayan_value, atpress=req.atpress, attemp=req.attemp)
     response.headers["Cache-Control"] = _CACHE
     return result
 
@@ -345,6 +346,7 @@ def chart_get(
     frames: str | None = Query(None),
     stars: str | None = Query(None),
     nodes: str = Query("mean"),
+    center: str | None = Query(None),
     ayan_t0: float | None = Query(0.0),
     ayan_value: float | None = Query(0.0),
     atpress: float | None = Query(0.0),
@@ -354,7 +356,7 @@ def chart_get(
         datetime_str=datetime, jd_ut=jd_ut, tz=tz, lat=lat, lon=lon, alt=alt,
         ayanamsha=ayanamsha, house_system=house_system, bodies=bodies,
         include=include, topocentric=topocentric, frames=frames, stars=stars,
-        nodes=nodes, ayan_t0=ayan_t0, ayan_value=ayan_value,
+        nodes=nodes, center=center, ayan_t0=ayan_t0, ayan_value=ayan_value,
         atpress=atpress, attemp=attemp)
     response.headers["Cache-Control"] = _CACHE
     return result

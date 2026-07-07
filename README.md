@@ -4,7 +4,7 @@ A **free, open, no-rate-limit** HTTP API over the [Swiss Ephemeris](https://www.
 
 - ⚡ **Fast** — a full chart in ~4 ms; *everything* (all bodies + eclipses + rise/set + fixed stars + orbital elements) in ~14 ms.
 - 🎯 **Accurate** — bundled Swiss `.se1` data files give 0.001″ agreement with NASA JPL, for **1200 AD – 3000 AD**. Dates outside that fall back to the built-in Moshier model automatically (and the response says which was used).
-- 🪐 **Complete** — tropical + sidereal + equatorial positions & speeds for all bodies, coordinate frames (heliocentric/barycentric/J2000/XYZ), every house system, all 47 ayanamshas, chart angles, planetary phenomena, eclipses & occultations, risings/settings/twilight, sky position, fixed stars, nodes & orbital elements, ingress/crossing times, Gauquelin sectors.
+- 🪐 **Complete — verified 100%** of the Swiss Ephemeris *data* surface (audited function-by-function): positions & speeds for all bodies + coordinate frames, every house system + cusp speeds, all 47 ayanamshas, chart angles, phenomena, eclipses & occultations (with ground path), risings/settings/twilight, sky position, heliacal visibility, fixed stars, nodes & orbital elements + distance envelope, ingress/crossing times (geo & heliocentric), Gauquelin sectors, planetocentric positions.
 - 🆓 **No API keys, no rate limits, CORS-open.**
 
 > Powered by [`pyswisseph`](https://pypi.org/project/pyswisseph/). Swiss Ephemeris is © Astrodienst AG and used here under the **GNU AGPL-3.0**. This service is Free/Libre software; its complete source is linked in every response (`meta.source`). See [License](#license).
@@ -74,10 +74,11 @@ curl -X POST http://localhost:8080/v1/chart -H 'content-type: application/json' 
 | `ayanamsha` | `lahiri` | Sidereal mode: a slug (`lahiri`, `kp`, `raman`, `fagan_bradley`, …), a `SIDM_*` name, or an integer id. See `/v1/meta`. |
 | `house_system` | `P` | One-character Swiss code (`P` Placidus, `K` Koch, `W` Whole-sign, `B` Alcabitius, …). See `/v1/meta`. |
 | `bodies` | default set | CSV of body keys, or `all` (43 incl. Uranian/fictitious), `default`, or `fictitious`. |
-| `include` | *(none)* | CSV of heavy sections, or `all`: `eclipses,rise_transit,fixed_stars,nodes_apsides,orbital_elements,crossings,occultations,twilight,sky_position,all_house_systems,gauquelin`. |
+| `include` | *(none)* | CSV of heavy sections, or `all`: `eclipses,rise_transit,fixed_stars,nodes_apsides,orbital_elements,crossings,occultations,twilight,sky_position,all_house_systems,gauquelin,heliacal`. |
 | `frames` | *(none)* | Extra coordinate frames per body, CSV or `all`: `heliocentric,barycentric,j2000,astrometric,true_geometric,xyz`. |
 | `stars` | curated 17 | Fixed stars: CSV of names, or `all` (~770). |
 | `nodes` | `mean` | Node/apsis method: `mean`, `osculating`, or `both`. |
+| `center` | *(none)* | Planetocentric center body (e.g. `mars`) — positions as seen from it. |
 | `topocentric` | `false` | Add a topocentric position pass per body. |
 | `ayanamsha=user` | — | With `ayan_t0` (JD) + `ayan_value` (deg): a fully custom ayanamsha. |
 | `atpress`, `attemp` | `0` | Atmospheric pressure (mbar) / temperature (°C) for rise/set refraction. |

@@ -145,7 +145,8 @@ def test_osculating_nodes_and_full_orbital():
     res = engine.compute_chart(jd_ut=ut, include={"nodes_apsides", "orbital_elements"},
                                nodes_method="both")
     assert set(res["nodes_apsides"]["mars"]) == {"mean", "osculating"}
-    assert len(res["orbital_elements"]["mars"]) == 17
+    # 17 Kepler elements + max/min/true distance envelope
+    assert len(res["orbital_elements"]["mars"]) == 20
 
 
 # --------------------------------------------------------------------------- #
@@ -166,3 +167,49 @@ def test_out_of_all_range_degrades_gracefully():
     assert "error" in sun
     assert res["meta"]["equation_of_time_minutes"] is None
     assert "houses" in res  # analytical, still valid
+
+
+# --------------------------------------------------------------------------- #
+# 100% coverage: the 9 formerly-missing data functions                         #
+# --------------------------------------------------------------------------- #
+def test_eclipse_geographic_path():
+    _et, ut = _jd(2026, 1, 1)
+    res = engine.compute_chart(jd_ut=ut, include={"eclipses"})
+    path = res["eclipses"]["next_solar_global"]["path"]
+    assert -180 <= path["central_line"]["longitude"] <= 180
+    assert -90 <= path["central_line"]["latitude"] <= 90
+
+
+def test_orbit_max_min_distance():
+    _et, ut = _jd(2000, 1, 1, 12)
+    res = engine.compute_chart(jd_ut=ut, include={"orbital_elements"})
+    mars = res["orbital_elements"]["mars"]
+    assert mars["min_distance_au"] < mars["true_distance_au"] < mars["max_distance_au"]
+
+
+def test_heliocentric_ingress():
+    _et, ut = _jd(2026, 1, 1)
+    res = engine.compute_chart(jd_ut=ut, include={"crossings"})
+    assert "jupiter" in res["crossings"]["heliocentric_ingress"]
+
+
+def test_house_cusp_speeds():
+    _et, ut = _jd(2000, 1, 1, 12)
+    res = engine.compute_chart(jd_ut=ut, lat=28.6, lon=77.2)
+    sp = res["houses"]["speeds"]["tropical"]
+    assert len(sp["cusps"]) == 12 and "ascendant" in sp["angles"]
+
+
+def test_planetocentric():
+    _et, ut = _jd(2000, 1, 1, 12)
+    res = engine.compute_chart(jd_ut=ut, center="mars")
+    assert res["planetocentric"]["center"] == "mars"
+    assert "moon" in res["planetocentric"]["bodies"]
+
+
+def test_heliacal_section():
+    _et, ut = _jd(2026, 7, 7)
+    res = engine.compute_chart(jd_ut=ut, lat=28.6, lon=77.2, include={"heliacal"})
+    v = res["heliacal"]["venus"]
+    assert "heliacal_rising" in v and "limiting_magnitude" in v
+    assert "observability" in v and len(v["observability"]["raw"]) == 50
