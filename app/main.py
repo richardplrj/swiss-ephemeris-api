@@ -269,8 +269,10 @@ def meta():
         "ayanamshas": engine.available_ayanamshas(),
         "ayanamsha_aliases": catalog.AYANAMSHA_ALIASES,
         "house_systems": engine.valid_house_systems(),
-        "bodies": {"default": [b[0] for b in catalog.DEFAULT_BODIES],
-                   "all": [b[0] for b in catalog.ALL_BODIES],
+        # Ketu (descending node) is derived and appended to every chart, so it
+        # is listed here too — keeping this in sync with the actual response.
+        "bodies": {"default": [b[0] for b in catalog.DEFAULT_BODIES] + ["ketu"],
+                   "all": [b[0] for b in catalog.ALL_BODIES] + ["ketu"],
                    "fictitious": [b[0] for b in catalog.FICTITIOUS_BODIES]},
         "include_sections": list(engine.HEAVY_SECTIONS),
         "coordinate_frames": sorted(_VALID_FRAMES),
