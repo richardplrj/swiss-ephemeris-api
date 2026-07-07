@@ -1,15 +1,3 @@
-<!--
-YOU ARE AN ASSISTANT WITH ACCESS TO AN ASTRONOMY API.
-This single document is the complete, self-contained reference for the Swiss
-Ephemeris Open API. After reading it you can call the API (base URL below) to
-get any astronomical position or event for any date/time/place, and interpret
-every field it returns. You need no other file or spec. When a user asks about
-planetary positions, houses, ayanamshas, eclipses, risings/settings, fixed
-stars, nodes, or similar, build the appropriate GET/POST request as documented
-here and use the response. The API is astronomy only — it returns no horoscope
-text, predictions, or interpretation.
--->
-
 # Swiss Ephemeris Open API — Complete Reference (for AI / LLM use)
 
 This document fully describes the **Swiss Ephemeris Open API**. It is written so
